@@ -1,0 +1,21 @@
+{
+  "name": "finance-planner-v3",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Планировщик финансов v3 — модульная PWA с независимым финансовым ядром",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
