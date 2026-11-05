@@ -32,7 +32,7 @@ describe('Stage 2.5 — Money Reversals', () => {
     expect(plan.updatedEntries[0].entryStatus).toBe('reversed');
     expect(plan.updatedMovements[0].reversalStatus).toBe('fully_reversed');
 
-    // Проверяем, что восстановленный credit ссылается на p1
+    // Проверяем, что восстановленный credit ссылается на p1 и возвращает 400
     const compCredit = plan.newEntries.find(e => e.entryType === 'credit');
     expect(compCredit.restoresPositionId).toBe('p1');
     expect(compCredit.amountMinor).toBe(400);
@@ -72,8 +72,8 @@ describe('Stage 2.5 — Money Reversals', () => {
 
     // Ожидаем, что M2 и M3 схлопнутся
     // M3 (p4 -> p3): 100
-    // M2 (p3 -> p2): 100 (остаток) + 100 (от M3) = 200
-    // M1 (p2 -> p1): 200 (остаток) + 200 (от M2) = 400
+    // M2 (p3 -> p2): 200 (100 остаток + 100 от M3)
+    // M1 (p2 -> p1): 400 (200 остаток + 200 от M2)
     
     // Итого plan.newEntries: 
     // Для p4: debit(100), credit(100) -> p3
