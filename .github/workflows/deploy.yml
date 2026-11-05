@@ -1,6 +1,3 @@
-# CI/CD: сборка и деплой на GitHub Pages.
-# Запускается на push в main или вручную.
-# BASE_PATH автоматически = /<имя-репозитория>/ — работает для любого репо.
 name: Deploy to GitHub Pages
 
 on:
@@ -22,16 +19,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5   # обновлено для Node 24
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6   # обновлено для Node 24
         with:
           node-version: 20
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install   # заменено с npm ci, чтобы не требовать package-lock.json
 
       - name: Run tests
         run: npm run test:run
