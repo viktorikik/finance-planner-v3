@@ -1,0 +1,21 @@
+# Зависимости
+node_modules/
+
+# Сборка
+dist/
+.vite/
+
+# Логи
+*.log
+npm-debug.log*
+
+# Системное
+.DS_Store
+Thumbs.db
+
+# Окружение
+.env.local
+.env.*.local
+
+# Тестовое покрытие
+coverage/
