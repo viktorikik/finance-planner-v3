@@ -1,0 +1,21 @@
+{
+  "name": "Планировщик финансов",
+  "short_name": "Финансы v3",
+  "description": "Планирование личного бюджета: доходы, расходы, цели, накопления",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1117",
+  "theme_color": "#0f1117",
+  "lang": "ru",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "./icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
