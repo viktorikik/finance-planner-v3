@@ -47,13 +47,24 @@ export function planMovementReversal(movementId, state) {
   const sortedNodes = allNodes.reverse();
   
   for (const posId of sortedNodes) {
-    const balance = calculatePositionBalance(posId, moneyEntries);
+    // Считаем, сколько денег изначально лежит в этой позиции
+    const originalBalance = calculatePositionBalance(posId, moneyEntries);
     
-    if (balance < 0) {
+    // Считаем, сколько денег пришло в эту позицию от её "детей" (уже созданных компенсаций)
+    let incomingFromChildren = 0;
+    for (const newEntry of newEntries) {
+      if (newEntry.entryType === 'credit' && newEntry.restoresPositionId === posId) {
+        incomingFromChildren += newEntry.amountMinor;
+      }
+    }
+    
+    const totalToMove = originalBalance + incomingFromChildren;
+    
+    if (totalToMove < 0) {
       throw new InvariantViolationError(`Отрицательный баланс позиции ${posId}`);
     }
     
-    if (balance > 0) {
+    if (totalToMove > 0) {
       const posEntry = moneyEntries.find(e => e.positionId === posId && e.entryType === 'credit');
       
       // Если это destPosition (корень), мы возвращаем всё в исходную sourcePositionId
@@ -69,7 +80,7 @@ export function planMovementReversal(movementId, state) {
         entryType: 'debit',
         locationType: posEntry.locationType,
         locationId: posEntry.locationId,
-        amountMinor: balance,
+        amountMinor: totalToMove,
         consumesPositionId: posId,
         entryStatus: 'reversal',
         reversalGroupId: cancellationGroupId,
@@ -86,7 +97,7 @@ export function planMovementReversal(movementId, state) {
         entryType: 'credit',
         locationType: parentEntry ? parentEntry.locationType : movement.sourceLocation.type,
         locationId: parentEntry ? parentEntry.locationId : movement.sourceLocation.id,
-        amountMinor: balance,
+        amountMinor: totalToMove,
         positionId: generateId(), // Новая позиция
         parentPositionId: null,   // Восстановление не создает дочернюю связь
         restoresPositionId: parentId, // Ссылка на восстанавливаемую позицию
