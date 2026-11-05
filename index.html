@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <!-- Тема и цвет системного интерфейса -->
+  <meta name="theme-color" content="#0f1117">
+  <meta name="color-scheme" content="dark">
+  <title>Планировщик финансов</title>
+
+  <!-- Ранний фон до загрузки CSS — предотвращает вспышку белого -->
+  <style>html{background:#0f1117}</style>
+
+  <!-- %BASE_URL% подставляет Vite: '/finance-planner-v3/' в production, '/' в dev -->
+  <link rel="manifest" href="%BASE_URL%manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="%BASE_URL%icons/icon.svg">
+  <link rel="apple-touch-icon" href="%BASE_URL%icons/icon.svg">
+</head>
+<body>
+
+  <!-- === КОРНЕВОЙ КОНТЕЙНЕР ПРИЛОЖЕНИЯ === -->
+  <div id="app">
+
+    <!-- === ШАПКА === -->
+    <header class="app-header">
+      <h1>💰 Планировщик финансов</h1>
+      <p class="subtitle">v3.0 — каркас в разработке</p>
+    </header>
+
+    <!-- === ОСНОВНАЯ НАВИГАЦИЯ (3 вкладки по ТЗ) === -->
+    <nav class="tabs" aria-label="Основная навигация">
+      <button class="tab" data-tab="plan">📋 План</button>
+      <button class="tab" data-tab="calendar">📅 Календарь</button>
+      <button class="tab" data-tab="statistics">📊 Статистика</button>
+    </nav>
+
+    <!-- === ОБЛАСТЬ ЭКРАНА (наполняется роутером) === -->
+    <main id="screen" class="screen" aria-live="polite"></main>
+
+    <!-- === ПЕРЕХОД К НАСТРОЙКАМ (не 4-я вкладка, по ТЗ) === -->
+    <footer class="app-footer">
+      <a href="#/settings" data-tab="settings">⚙️ Настройки</a>
+    </footer>
+
+  </div>
+
+  <!-- Точка входа. type=module подразумевает defer -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
