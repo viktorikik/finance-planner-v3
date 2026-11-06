@@ -1,30 +1,31 @@
 /* ==========================================================================
    Экран «План».
-   Отображает цели, позволяет создавать новые и вносить взносы.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
-import { calculateGoalBalance } from '../../../domain/statistics/balances.js';
+import { calculateGoalBalance, calculateTotalAccumulated } from '../../../domain/statistics/balances.js';
 import { generateId } from '../../../domain/shared/ids.js';
 
-/**
- * Рендерит экран «План».
- * @param {HTMLElement} container 
- * @param {IDBDatabase} db 
- */
 export async function renderPlanScreen(container, db) {
-  // 1. Загружаем данные из базы
   const tx = db.transaction(['goals', 'moneyEntries'], 'readonly');
   const goals = await getAllFromStore('goals', tx);
   const moneyEntries = await getAllFromStore('moneyEntries', tx);
 
-  // 2. Формируем HTML
+  const totalAccumulated = calculateTotalAccumulated(moneyEntries);
+  const formattedTotal = (totalAccumulated / 100).toLocaleString('ru-RU');
+
   let html = `
+    <div style="text-align: center; margin-bottom: 20px;">
+      <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
+      <div style="font-size: 32px; font-weight: 800; color: var(--green);">${formattedTotal} ₽</div>
+    </div>
+
     <section class="card">
       <h2>Создать цель</h2>
       <form id="create-goal-form" class="form-row">
         <input type="text" id="goal-name" placeholder="Название (например, Отпуск)" required>
         <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
+        <input type="month" id="goal-deadline" style="max-width: 150px;">
         <button type="submit" class="btn">Добавить</button>
       </form>
     </section>
@@ -45,12 +46,16 @@ export async function renderPlanScreen(container, db) {
       html += `
         <div class="goal-item">
           <div class="goal-info">
-            <strong>${goal.name}</strong>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <strong>${goal.name}</strong>
+              <button class="btn-delete" data-goal-id="${goal.id}" title="Удалить">×</button>
+            </div>
             <div class="goal-progress">
               ${(balance / 100).toLocaleString('ru-RU')} ₽ / ${(target / 100).toLocaleString('ru-RU')} ₽
               <span class="percent">${percent}%</span>
             </div>
             <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
+            ${goal.deadlineMonth ? `<div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Срок: ${goal.deadlineMonth}</div>` : ''}
           </div>
           <form class="add-contrib-form" data-goal-id="${goal.id}">
             <input type="number" placeholder="Взнос (₽)" required class="contrib-amount">
@@ -64,11 +69,12 @@ export async function renderPlanScreen(container, db) {
   html += `</div></section>`;
   container.innerHTML = html;
 
-  // 3. Обработчик создания цели
+  // Обработчик создания цели
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
     const targetRub = parseFloat(document.getElementById('goal-target').value);
+    const deadlineMonth = document.getElementById('goal-deadline').value || null;
     
     if (!name || isNaN(targetRub) || targetRub <= 0) {
       alert('Пожалуйста, введите корректное название и сумму больше нуля.');
@@ -82,7 +88,7 @@ export async function renderPlanScreen(container, db) {
         name,
         category: 'long',
         targetAmountMinor: Math.round(targetRub * 100),
-        deadlineMonth: null
+        deadlineMonth
       },
       registeredAt: new Date().toISOString()
     };
@@ -91,7 +97,6 @@ export async function renderPlanScreen(container, db) {
       const btn = e.target.querySelector('button');
       btn.disabled = true;
       btn.textContent = '...';
-      
       await executeCommand(db, cmd);
       await renderPlanScreen(container, db);
     } catch (err) {
@@ -101,7 +106,7 @@ export async function renderPlanScreen(container, db) {
     }
   });
 
-  // 4. Обработчик добавления взноса
+  // Обработчик добавления взноса
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -109,10 +114,7 @@ export async function renderPlanScreen(container, db) {
       const amountInput = form.querySelector('.contrib-amount');
       const amountRub = parseFloat(amountInput.value);
       
-      if (isNaN(amountRub) || amountRub <= 0) {
-        alert('Пожалуйста, введите сумму больше нуля.');
-        return;
-      }
+      if (isNaN(amountRub) || amountRub <= 0) return;
 
       const cmd = {
         commandId: generateId(),
@@ -130,13 +132,33 @@ export async function renderPlanScreen(container, db) {
         const btn = form.querySelector('button');
         btn.disabled = true;
         btn.textContent = '...';
-        
         await executeCommand(db, cmd);
         await renderPlanScreen(container, db);
       } catch (err) {
         alert('Ошибка: ' + err.message);
         btn.disabled = false;
         btn.textContent = '+';
+      }
+    });
+  });
+
+  // Обработчик удаления цели
+  container.querySelectorAll('.btn-delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Вы уверены, что хотите удалить эту цель?')) return;
+      
+      const cmd = {
+        commandId: generateId(),
+        commandType: 'goal.delete',
+        payload: { goalId: btn.dataset.goalId },
+        registeredAt: new Date().toISOString()
+      };
+
+      try {
+        await executeCommand(db, cmd);
+        await renderPlanScreen(container, db);
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
       }
     });
   });
