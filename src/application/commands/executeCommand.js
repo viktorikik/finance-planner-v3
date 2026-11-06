@@ -8,7 +8,8 @@ import { planMovementReversal } from '../../domain/money/reversals.js';
 import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
-import { calculateGoalBalance, calculatePositionBalance } from '../../domain/statistics/balances.js';
+import { calculateGoalBalance } from '../../domain/statistics/balances.js';
+import { calculatePositionBalance } from '../../domain/money/moneyPositions.js'; // <-- ПРАВИЛЬНЫЙ ИМПОРТ
 import { generateId } from '../../domain/shared/ids.js';
 
 /**
