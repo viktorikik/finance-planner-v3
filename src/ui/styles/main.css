@@ -110,8 +110,8 @@ input::placeholder { color: #5b6175; }
 .auto-plan-btn:hover { background: rgba(255, 200, 87, 0.25); }
 
 .add-contrib-form { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.add-contrib-form input { flex: 1; padding: 10px 14px; font-size: 14px; }
-.add-contrib-form button { width: 48px; padding: 10px 0; display: flex; justify-content: center; }
+.add-contrib-form input { flex: 1; min-width: 0; padding: 10px 14px; font-size: 14px; }
+.add-contrib-form button { width: 48px; padding: 10px 0; display: flex; justify-content: center; flex-shrink: 0; }
 
 /* Утилиты */
 .muted { color: var(--muted); font-size: 14px; text-align: center; padding: 12px; }
@@ -119,7 +119,7 @@ input::placeholder { color: #5b6175; }
 .app-footer a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all 0.15s; display: inline-block; }
 .app-footer a:hover, .app-footer a.active { color: var(--accent); background: rgba(124,92,255,0.1); }
 
-/* Календарь (оставляем как было) */
+/* Календарь */
 .calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .calendar-nav button { background: var(--card-2); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; font-size: 20px; line-height: 1; transition: all 0.15s; font-family: inherit; }
 .calendar-nav button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
