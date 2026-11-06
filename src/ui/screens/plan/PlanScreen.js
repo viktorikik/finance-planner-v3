@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Визуальные улучшения: сворачиваемый график, компактные кнопки.
+   Исправлен обрезанный плейсхолдер в форме факта.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -136,7 +136,7 @@ export async function renderPlanScreen(container, db) {
 
           <!-- Форма ФАКТА -->
           <form class="add-contrib-form" data-goal-id="${goal.id}">
-            <input type="number" placeholder="Внести фактические деньги (₽)" required class="contrib-amount">
+            <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
             <button type="submit" class="btn btn-small" title="Внести факт">+</button>
           </form>
         </div>
