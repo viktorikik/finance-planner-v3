@@ -1,4 +1,4 @@
-/* ==================/* ==========================================================================
+/* ==========================================================================
    Исполнитель команд.
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
@@ -37,7 +37,15 @@ export async function executeCommand(db, command) {
 
   let stores = ['processedCommands', 'auditLog', 'goals', 'plannedOperations'];
   
-  if (commandType.startsWith('contribution') || commandType === 'money.transfer' || commandType === 'money.reverse' || commandType === 'goal.delete' || commandType === 'goal.achieve') {
+  // ДОБАВЛЕНА КОМАНДА plannedOperation.generate, ЧТОБЫ РАЗРЕШИТЬ ЧТЕНИЕ moneyEntries
+  if (
+    commandType.startsWith('contribution') || 
+    commandType === 'money.transfer' || 
+    commandType === 'money.reverse' || 
+    commandType === 'goal.delete' || 
+    commandType === 'goal.achieve' ||
+    commandType === 'plannedOperation.generate' 
+  ) {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements');
   }
 
@@ -47,7 +55,6 @@ export async function executeCommand(db, command) {
     const existingCommand = await getFromStore('processedCommands', commandId, tx);
     if (existingCommand) throw new DuplicateCommandError(`Команда ${commandId} уже выполнена`);
 
-    // Важно: инициализируем все массивы, чтобы ничего не упало
     let plan = { 
       newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
       updatedEntries: [], updatedMovements: [] 
@@ -155,11 +162,8 @@ export async function executeCommand(db, command) {
     await saveItems('moneyLots', plan.newLots);
     await saveItems('moneyEntries', plan.newEntries);
     await saveItems('moneyMovements', plan.newMovements);
-    
-    // ЭТИ ДВЕ СТРОКИ БЫЛИ ПОТЕРЯНЫ, ИЗ-ЗА НИХ ПАДАЛ ТЕСТ:
     await saveItems('moneyEntries', plan.updatedEntries);
     await saveItems('moneyMovements', plan.updatedMovements);
-    
     await saveItems('goals', plan.newGoals);
     await saveItems('plannedOperations', plan.newPlannedOperations);
 
