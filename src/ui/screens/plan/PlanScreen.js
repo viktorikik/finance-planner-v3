@@ -11,6 +11,9 @@ export async function renderPlanScreen(container, db) {
   const goals = await getAllFromStore('goals', tx);
   const moneyEntries = await getAllFromStore('moneyEntries', tx);
 
+  const activeGoals = goals.filter(g => g.status === 'active');
+  const achievedGoals = goals.filter(g => g.status === 'achieved');
+
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
   
@@ -26,14 +29,13 @@ export async function renderPlanScreen(container, db) {
       <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
         <h2 style="color: var(--green); margin-bottom: 8px;">Общий пул (Свободные деньги)</h2>
         <div style="font-size: 24px; font-weight: bold;">${formatRub(poolBalance)} ₽</div>
-        <div style="font-size: 12px; color: var(--muted); margin-top: 8px;">Эти деньги не привязаны к целям. Вы можете распределить их позже.</div>
       </section>
     ` : ''}
 
     <section class="card">
       <h2>Создать цель</h2>
       <form id="create-goal-form" class="form-row">
-        <input type="text" id="goal-name" placeholder="Название (например, Отпуск)" required>
+        <input type="text" id="goal-name" placeholder="Название" required>
         <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
         <input type="month" id="goal-deadline" style="max-width: 150px;">
         <button type="submit" class="btn">Добавить</button>
@@ -41,14 +43,14 @@ export async function renderPlanScreen(container, db) {
     </section>
 
     <section class="card">
-      <h2>Мои цели</h2>
+      <h2>Активные цели</h2>
       <div id="goals-list">
   `;
 
-  if (goals.length === 0) {
-    html += `<p class="muted">Пока нет целей. Создайте первую!</p>`;
+  if (activeGoals.length === 0) {
+    html += `<p class="muted">Пока нет активных целей.</p>`;
   } else {
-    for (const goal of goals) {
+    for (const goal of activeGoals) {
       const balance = calculateGoalBalance(goal.id, moneyEntries);
       const target = goal.targetAmountMinor;
       const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
@@ -58,14 +60,16 @@ export async function renderPlanScreen(container, db) {
           <div class="goal-info">
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
               <strong>${goal.name}</strong>
-              <button class="btn-delete" data-goal-id="${goal.id}" title="Удалить">×</button>
+              <div style="display:flex; gap: 8px;">
+                ${percent >= 100 ? `<button class="btn-icon achieve" data-goal-id="${goal.id}" title="Достигнута">✓</button>` : ''}
+                <button class="btn-icon delete" data-goal-id="${goal.id}" title="Удалить">×</button>
+              </div>
             </div>
             <div class="goal-progress">
               ${formatRub(balance)} ₽ / ${formatRub(target)} ₽
               <span class="percent">${percent}%</span>
             </div>
             <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
-            ${goal.deadlineMonth ? `<div style="font-size: 11px; color: var(--muted); margin-top: 6px;">Срок: ${goal.deadlineMonth}</div>` : ''}
           </div>
           <form class="add-contrib-form" data-goal-id="${goal.id}">
             <input type="number" placeholder="Взнос (₽)" required class="contrib-amount">
@@ -77,9 +81,27 @@ export async function renderPlanScreen(container, db) {
   }
 
   html += `</div></section>`;
+
+  // Блок Архива
+  if (achievedGoals.length > 0) {
+    html += `
+      <section class="card" style="opacity: 0.7;">
+        <h2>Архив (Достигнутые цели)</h2>
+        <div>
+          ${achievedGoals.map(g => `
+            <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
+              <span><s>${g.name}</s></span>
+              <span style="color: var(--green);">${formatRub(g.targetAmountMinor)} ₽</span>
+            </div>
+          `).join('')}
+        </div>
+      </section>
+    `;
+  }
+
   container.innerHTML = html;
 
-  // Обработчики (без изменений, только копируем)
+  // Обработчики
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
@@ -132,14 +154,51 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  container.querySelectorAll('.btn-delete').forEach(btn => {
+  // Достижение цели
+  container.querySelectorAll('.btn-icon.achieve').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Вы уверены? Деньги с этой цели перейдут в Общий пул.')) return;
+      if (!confirm('Поздравляем! Цель достигнута. Деньги будут списаны (потрачены), а цель уйдет в архив. Продолжить?')) return;
+      
+      const cmd = {
+        commandId: generateId(),
+        commandType: 'goal.achieve',
+        payload: { goalId: btn.dataset.goalId },
+        registeredAt: new Date().toISOString()
+      };
+
+      try {
+        await executeCommand(db, cmd);
+        await renderPlanScreen(container, db);
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      }
+    });
+  });
+
+  // Удаление цели
+  container.querySelectorAll('.btn-icon.delete').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const goalId = btn.dataset.goalId;
+      const goal = activeGoals.find(g => g.id === goalId);
+      const balance = calculateGoalBalance(goalId, moneyEntries);
+
+      let moveToPool = false;
+
+      if (balance > 0) {
+        const choice = confirm(
+          `На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\n` +
+          `Нажмите ОК, чтобы ПЕРЕВЕСТИ деньги в Общий пул (для других целей).\n` +
+          `Нажмите Отмена, чтобы УДАЛИТЬ эти деньги из системы (если это тест).`
+        );
+        moveToPool = choice;
+      } else {
+        if (!confirm('Удалить цель?')) return;
+      }
       
       const cmd = {
         commandId: generateId(),
         commandType: 'goal.delete',
-        payload: { goalId: btn.dataset.goalId },
+        payload: { goalId, moveToPool },
         registeredAt: new Date().toISOString()
       };
 
