@@ -128,6 +128,8 @@ input[type="month"] {
   .form-row { flex-direction: column; }
 }
 
+
+
 /* ==========================================================================
    Экран «Календарь» (v2 — План и Факт)
    ========================================================================== */
@@ -186,3 +188,33 @@ input[type="month"] {
 .btn-outline:hover { background: var(--card-2); border-color: var(--accent); }
 
 .inline-fact-form input { width: 100%; padding: 10px; font-size: 14px; }
+
+/* Список планов внутри цели */
+.goal-plans-list {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+}
+
+.plan-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.plan-row:last-child { border-bottom: none; }
+.plan-row span { color: var(--muted); }
+.plan-row b { color: var(--text); }
+
+.goal-actions {
+  display: flex;
+  flex-direction: column;
+}
+
+.manual-plan-form input, .add-contrib-form input {
+  width: 100%;
+}
