@@ -1,13 +1,12 @@
 /* ==========================================================================
    Экран «План».
-   Исправлен обрезанный плейсхолдер в форме факта.
+   Визуальный рефакторинг: форма создания цели и список планов.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
 import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { generateId } from '../../../domain/shared/ids.js';
 
-// Храним состояние развернутых списков в памяти модуля
 const expandedGoals = new Set();
 
 export async function renderPlanScreen(container, db) {
@@ -23,6 +22,10 @@ export async function renderPlanScreen(container, db) {
   
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
   const currentMonth = new Date().toISOString().slice(0, 7);
+  
+  // Устанавливаем дефолтный дедлайн (следующий год), чтобы iOS его отобразил
+  const nextYear = new Date().getFullYear() + 1;
+  const defaultDeadline = `${nextYear}-12`;
 
   let html = `
     <div style="text-align: center; margin-bottom: 20px;">
@@ -39,11 +42,13 @@ export async function renderPlanScreen(container, db) {
 
     <section class="card">
       <h2>Создать цель</h2>
-      <form id="create-goal-form" class="form-row">
-        <input type="text" id="goal-name" placeholder="Название" required>
+      <form id="create-goal-form" class="create-goal-form">
+        <input type="text" id="goal-name" placeholder="Название цели" required>
         <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
-        <input type="month" id="goal-deadline" style="max-width: 150px;" required>
-        <button type="submit" class="btn">Добавить</button>
+        <div class="form-row-bottom">
+          <input type="month" id="goal-deadline" required value="${defaultDeadline}">
+          <button type="submit" class="btn">Создать</button>
+        </div>
       </form>
     </section>
 
@@ -182,7 +187,6 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
-  // Показать/Скрыть все планы
   container.querySelectorAll('.toggle-plans-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const goalId = btn.dataset.goalId;
@@ -192,7 +196,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Очистить весь план цели
   container.querySelectorAll('.clear-plans-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Удалить ВСЕ плановые взносы для этой цели?')) return;
@@ -208,7 +211,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Автоплан
   container.querySelectorAll('.auto-plan-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Система разделит оставшуюся сумму на равные части до дедлайна. Продолжить?')) return;
@@ -224,7 +226,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Удалить один план
   container.querySelectorAll('.delete-plan').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Удалить этот плановый взнос?')) return;
@@ -238,7 +239,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Показать форму ручного ввода
   container.querySelectorAll('.toggle-manual-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const goalId = btn.dataset.goalId;
@@ -247,7 +247,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Ручное добавление
   container.querySelectorAll('.manual-plan-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -255,6 +254,13 @@ export async function renderPlanScreen(container, db) {
       const plannedMonth = form.querySelector('.m-month').value;
       const amountRub = parseFloat(form.querySelector('.m-amount').value);
       if (!plannedMonth || isNaN(amountRub) || amountRub <= 0) return;
+
+      // Проверка на дубликат месяца
+      const existing = allPlannedOps.find(op => op.goalId === goalId && op.plannedMonth === plannedMonth);
+      if (existing) {
+        alert('На этот месяц уже есть плановый взнос!');
+        return;
+      }
 
       const cmd = {
         commandId: generateId(), commandType: 'plannedOperation.create',
@@ -268,7 +274,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Фактический взнос
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -288,7 +293,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Достижение цели
   container.querySelectorAll('.btn-icon.achieve').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Цель достигнута! Деньги списываются, цель уходит в архив.')) return;
@@ -300,7 +304,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Удаление цели
   container.querySelectorAll('.btn-icon.delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const goalId = btn.dataset.goalId;
