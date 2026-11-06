@@ -60,16 +60,30 @@ body {
 .card h2 { font-size: 18px; margin-bottom: 16px; font-weight: 600; }
 
 /* Формы */
-.form-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.form-row input { flex: 1; min-width: 120px; }
+.create-goal-form { display: flex; flex-direction: column; gap: 8px; }
+.form-row-bottom { display: flex; gap: 8px; }
+.form-row-bottom input { flex: 1; min-width: 0; }
+.form-row-bottom button { flex-shrink: 0; }
 
 input, select {
   background: var(--card-2); border: 1px solid var(--border); border-radius: 10px;
   color: var(--text); padding: 12px 14px; font-family: inherit; font-size: 16px; outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s; width: 100%;
 }
 input:focus { border-color: var(--accent); }
 input::placeholder { color: #5b6175; }
+
+/* ИСПРАВЛЕНИЕ ДЛЯ IOS (чтобы месяц не был невидимым) */
+input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+}
+input[type="month"]::-webkit-datetime-edit {
+  color: var(--text);
+}
 
 .btn { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .btn:hover { background: var(--accent-hover); }
@@ -94,10 +108,16 @@ input::placeholder { color: #5b6175; }
 .progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
 
 /* Блок планов */
-.goal-plans-container { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 4px; }
+.goal-plans-container { 
+  background: rgba(15, 17, 23, 0.4); /* Полупрозрачный фон вместо черного */
+  border: 1px solid var(--border); 
+  border-radius: 12px; 
+  padding: 12px; 
+  margin-bottom: 4px; 
+}
 .plans-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; }
 .plans-list { display: flex; flex-direction: column; gap: 4px; }
-.plan-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.plan-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .plan-row:last-child { border-bottom: none; }
 .plan-row span { color: var(--muted); flex: 1; }
 .plan-row b { color: var(--text); margin-right: 12px; }
