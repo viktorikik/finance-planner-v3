@@ -1,5 +1,6 @@
 /* ==========================================================================
    Экран «План».
+   Добавлена форма для создания плановых операций (📅).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -18,6 +19,7 @@ export async function renderPlanScreen(container, db) {
   const poolBalance = calculatePoolBalance(moneyEntries);
   
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU');
+  const currentMonth = new Date().toISOString().slice(0, 7);
 
   let html = `
     <div style="text-align: center; margin-bottom: 20px;">
@@ -56,7 +58,7 @@ export async function renderPlanScreen(container, db) {
       const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
       
       html += `
-        <div class="goal-item">
+        <div class="goal-item" style="flex-direction: column; align-items: stretch;">
           <div class="goal-info">
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
               <strong>${goal.name}</strong>
@@ -71,10 +73,21 @@ export async function renderPlanScreen(container, db) {
             </div>
             <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
           </div>
-          <form class="add-contrib-form" data-goal-id="${goal.id}">
-            <input type="number" placeholder="Взнос (₽)" required class="contrib-amount">
-            <button type="submit" class="btn btn-small">+</button>
-          </form>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px; width: 100%; margin-top: 12px;">
+            <!-- Форма ФАКТА -->
+            <form class="add-contrib-form" data-goal-id="${goal.id}" style="margin:0;">
+              <input type="number" placeholder="Факт. взнос (₽)" required class="contrib-amount">
+              <button type="submit" class="btn btn-small" title="Внести реальные деньги">+</button>
+            </form>
+            
+            <!-- Форма ПЛАНА -->
+            <form class="add-planned-form" data-goal-id="${goal.id}" style="display:flex; gap:6px; margin:0;">
+              <input type="month" class="planned-month" required value="${currentMonth}" style="flex:1; padding: 8px; font-size: 14px;">
+              <input type="number" placeholder="План (₽)" required class="planned-amount" style="flex:1; padding: 8px; font-size: 14px;">
+              <button type="submit" class="btn btn-small" style="background: #ffc857; color: #000;" title="Запланировать взнос">📅</button>
+            </form>
+          </div>
         </div>
       `;
     }
@@ -101,7 +114,7 @@ export async function renderPlanScreen(container, db) {
 
   container.innerHTML = html;
 
-  // Обработчики
+  // Обработчик создания цели
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
@@ -128,6 +141,7 @@ export async function renderPlanScreen(container, db) {
     }
   });
 
+  // Обработчик ФАКТИЧЕСКОГО взноса
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -150,6 +164,35 @@ export async function renderPlanScreen(container, db) {
       } catch (err) {
         alert('Ошибка: ' + err.message);
         btn.disabled = false; btn.textContent = '+';
+      }
+    });
+  });
+
+  // Обработчик ПЛАНОВОГО взноса (📅)
+  container.querySelectorAll('.add-planned-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const goalId = form.dataset.goalId;
+      const plannedMonth = form.querySelector('.planned-month').value;
+      const amountRub = parseFloat(form.querySelector('.planned-amount').value);
+      
+      if (!plannedMonth || isNaN(amountRub) || amountRub <= 0) return;
+
+      const cmd = {
+        commandId: generateId(),
+        commandType: 'plannedOperation.create',
+        payload: { goalId, plannedMonth, plannedAmountMinor: Math.round(amountRub * 100) },
+        registeredAt: new Date().toISOString()
+      };
+
+      try {
+        const btn = form.querySelector('button');
+        btn.disabled = true; btn.textContent = '...';
+        await executeCommand(db, cmd);
+        await renderPlanScreen(container, db);
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+        btn.disabled = false; btn.textContent = '📅';
       }
     });
   });
