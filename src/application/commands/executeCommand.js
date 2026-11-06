@@ -8,6 +8,7 @@ import { planMovementReversal } from '../../domain/money/reversals.js';
 import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
 import { generatePlanForGoal } from '../../domain/planning/planGenerator.js';
+import { planActualIncomeCreate } from '../../domain/money/actualIncomes.js'; // <-- НОВЫЙ ИМПОРТ
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
 import { calculateGoalBalance } from '../../domain/statistics/balances.js';
 import { calculatePositionBalance } from '../../domain/money/moneyPositions.js';
@@ -43,9 +44,10 @@ export async function executeCommand(db, command) {
     commandType === 'money.reverse' || 
     commandType === 'goal.delete' || 
     commandType === 'goal.achieve' ||
-    commandType === 'plannedOperation.generate' 
+    commandType === 'plannedOperation.generate' ||
+    commandType === 'actualIncome.create' // <-- РАЗРЕШАЕМ ДОСТУП
   ) {
-    stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements');
+    stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes');
   }
 
   const tx = db.transaction(stores, 'readwrite');
@@ -56,7 +58,7 @@ export async function executeCommand(db, command) {
 
     let plan = { 
       newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
-      updatedEntries: [], updatedMovements: [] 
+      newActualIncomes: [], updatedEntries: [], updatedMovements: [] 
     };
     let state = null;
 
@@ -71,6 +73,9 @@ export async function executeCommand(db, command) {
     switch (commandType) {
       case 'contribution.create':
         plan = planContribution(payload);
+        break;
+      case 'actualIncome.create': // <-- НОВЫЙ CASE
+        plan = planActualIncomeCreate(payload);
         break;
       case 'money.transfer':
         plan = planMoneyTransfer(payload, state);
@@ -98,7 +103,6 @@ export async function executeCommand(db, command) {
           req.onerror = () => reject(req.error);
         });
         break;
-      // НОВАЯ КОМАНДА: Удалить все планы для цели
       case 'plannedOperation.clearForGoal':
         const allOpsForGoal = await getAllFromStore('plannedOperations', tx);
         const opsToDelete = allOpsForGoal.filter(op => op.goalId === payload.goalId);
@@ -149,6 +153,7 @@ export async function executeCommand(db, command) {
     };
 
     await saveItems('actualContributions', plan.newContributions);
+    await saveItems('actualIncomes', plan.newActualIncomes); // <-- СОХРАНЯЕМ ДОХОДЫ
     await saveItems('moneyLots', plan.newLots);
     await saveItems('moneyEntries', plan.newEntries);
     await saveItems('moneyMovements', plan.newMovements);
