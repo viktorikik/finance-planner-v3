@@ -127,3 +127,62 @@ input[type="month"] {
   .add-contrib-form input { width: 100%; }
   .form-row { flex-direction: column; }
 }
+
+/* ==========================================================================
+   Экран «Календарь» (v2 — План и Факт)
+   ========================================================================== */
+
+.calendar-nav {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+}
+.calendar-nav button {
+  background: var(--card-2); border: 1px solid var(--border); color: var(--text);
+  width: 40px; height: 40px; border-radius: 10px; cursor: pointer; font-size: 20px;
+  line-height: 1; transition: all 0.15s; font-family: inherit;
+}
+.calendar-nav button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.calendar-nav h2 { font-size: 17px; font-weight: 600; text-transform: capitalize; margin: 0; border: none; }
+
+.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+.calendar-weekday { text-align: center; font-size: 11px; color: var(--muted); font-weight: 600; padding: 4px 0; }
+
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 16px; }
+.calendar-day {
+  aspect-ratio: 1; background: var(--card-2); border: 1px solid transparent; border-radius: 10px;
+  color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; padding: 4px; transition: all 0.15s;
+}
+.calendar-day.other-month { background: transparent; cursor: default; pointer-events: none; }
+.calendar-day:not(.other-month):hover { background: var(--accent); color: #fff; }
+.calendar-day.today { border-color: var(--accent); }
+.calendar-day.selected { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(124, 92, 255, 0.3); }
+
+.calendar-day-num { font-weight: 600; line-height: 1; }
+.calendar-markers { display: flex; gap: 4px; height: 5px; align-items: center; }
+
+.marker { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+.marker-plan { background: var(--accent); } /* План */
+.marker-fact { background: var(--green); }  /* Факт */
+.calendar-day.selected .marker { background: #fff; }
+
+.day-section-title {
+  font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
+  margin: 12px 0 8px; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 4px;
+}
+
+.event-item {
+  background: var(--card-2); border-radius: 10px; padding: 12px; margin-bottom: 8px;
+  border-left: 3px solid transparent;
+}
+.event-item.event-plan { border-left-color: var(--accent); }
+.event-item.event-fact { border-left-color: var(--green); }
+
+.event-title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+.event-meta { font-size: 12px; color: var(--muted); }
+
+/* Кнопки и формы факта */
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-outline:hover { background: var(--card-2); border-color: var(--accent); }
+
+.inline-fact-form input { width: 100%; padding: 10px; font-size: 14px; }
