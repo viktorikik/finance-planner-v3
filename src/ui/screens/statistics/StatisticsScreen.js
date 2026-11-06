@@ -1,14 +1,12 @@
 /* ==========================================================================
    Экран «Статистика».
-   Показывает общий баланс, распределение (пул/цели), норму сбережений
-   и прогресс по каждой цели.
+   Добавлено пояснение для нормы сбережений > 100%.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { calculateSavingsRate } from '../../../domain/statistics/savingsRate.js';
 
 export async function renderStatisticsScreen(container, db) {
-  // Загружаем все необходимые данные
   const tx = db.transaction(['goals', 'moneyEntries', 'actualContributions', 'actualIncomes'], 'readonly');
   const goals = await getAllFromStore('goals', tx);
   const moneyEntries = await getAllFromStore('moneyEntries', tx);
@@ -16,27 +14,29 @@ export async function renderStatisticsScreen(container, db) {
   const actualIncomes = await getAllFromStore('actualIncomes', tx);
 
   const activeGoals = goals.filter(g => g.status === 'active');
-  
-  // Считаем агрегаты
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
-  
-  // Считаем сумму по всем целям (всего накоплено минус пул)
   const totalInGoals = totalAccumulated - poolBalance;
   
-  // Считаем норму сбережений
   const savingsRate = calculateSavingsRate(actualIncomes, actualContributions);
 
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  
+  // Общая сумма доходов и взносов для справки
+  const totalIncomesRub = actualIncomes.reduce((s, i) => s + i.amountMinor, 0);
+  const totalContribsRub = actualContributions.filter(c => c.reversalStatus === 'active' && c.type !== 'initial').reduce((s, c) => s + c.amountMinor, 0);
 
-  // Рендерим HTML
+  let savingsHint = '';
+  if (savingsRate > 100) {
+    savingsHint = '<div style="font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4;">Вы откладываете больше, чем внесли доходов. Это нормально, если вы используете накопления из прошлого.</div>';
+  }
+
   let html = `
     <section class="card" style="text-align: center; background: linear-gradient(180deg, var(--card) 0%, rgba(61, 220, 151, 0.05) 100%);">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">Всего накоплено</div>
       <div style="font-size: 40px; font-weight: 800; color: var(--green); line-height: 1.1;">${formatRub(totalAccumulated)} ₽</div>
     </section>
 
-    <!-- Распределение средств -->
     <section class="card">
       <h2>Где лежат деньги</h2>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
@@ -51,7 +51,6 @@ export async function renderStatisticsScreen(container, db) {
       </div>
     </section>
 
-    <!-- Норма сбережений -->
     <section class="card">
       <h2>Норма сбережений</h2>
       ${savingsRate !== null ? `
@@ -61,19 +60,19 @@ export async function renderStatisticsScreen(container, db) {
             <div style="font-size: 13px; color: var(--muted);">от фактических доходов</div>
           </div>
           <div style="text-align: right; font-size: 13px; color: var(--muted);">
-            Доходы: ${formatRub(actualIncomes.reduce((s, i) => s + i.amountMinor, 0))} ₽<br>
-            Взносы: ${formatRub(actualContributions.filter(c => c.reversalStatus === 'active' && c.type !== 'initial').reduce((s, c) => s + c.amountMinor, 0))} ₽
+            Доходы: ${formatRub(totalIncomesRub)} ₽<br>
+            Взносы: ${formatRub(totalContribsRub)} ₽
           </div>
         </div>
         <div class="progress-bar" style="margin-top: 16px; height: 8px;">
           <div class="fill" style="width: ${Math.min(100, savingsRate)}%; background: var(--accent);"></div>
         </div>
+        ${savingsHint}
       ` : `
         <p class="muted" style="text-align: left; padding: 0;">Пока нет данных о фактических доходах. Как только вы начнете вносить доходы, мы посчитаем, какой процент от них вы откладываете.</p>
       `}
     </section>
 
-    <!-- Прогресс по целям -->
     <section class="card">
       <h2>Цели</h2>
       ${activeGoals.length === 0 ? '<p class="muted">Нет активных целей.</p>' : ''}
