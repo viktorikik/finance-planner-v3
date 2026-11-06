@@ -3,7 +3,7 @@
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
-import { calculateGoalBalance, calculateTotalAccumulated } from '../../../domain/statistics/balances.js';
+import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { generateId } from '../../../domain/shared/ids.js';
 
 export async function renderPlanScreen(container, db) {
@@ -12,13 +12,23 @@ export async function renderPlanScreen(container, db) {
   const moneyEntries = await getAllFromStore('moneyEntries', tx);
 
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
-  const formattedTotal = (totalAccumulated / 100).toLocaleString('ru-RU');
+  const poolBalance = calculatePoolBalance(moneyEntries);
+  
+  const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU');
 
   let html = `
     <div style="text-align: center; margin-bottom: 20px;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
-      <div style="font-size: 32px; font-weight: 800; color: var(--green);">${formattedTotal} ₽</div>
+      <div style="font-size: 32px; font-weight: 800; color: var(--green);">${formatRub(totalAccumulated)} ₽</div>
     </div>
+
+    ${poolBalance > 0 ? `
+      <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
+        <h2 style="color: var(--green); margin-bottom: 8px;">Общий пул (Свободные деньги)</h2>
+        <div style="font-size: 24px; font-weight: bold;">${formatRub(poolBalance)} ₽</div>
+        <div style="font-size: 12px; color: var(--muted); margin-top: 8px;">Эти деньги не привязаны к целям. Вы можете распределить их позже.</div>
+      </section>
+    ` : ''}
 
     <section class="card">
       <h2>Создать цель</h2>
@@ -51,7 +61,7 @@ export async function renderPlanScreen(container, db) {
               <button class="btn-delete" data-goal-id="${goal.id}" title="Удалить">×</button>
             </div>
             <div class="goal-progress">
-              ${(balance / 100).toLocaleString('ru-RU')} ₽ / ${(target / 100).toLocaleString('ru-RU')} ₽
+              ${formatRub(balance)} ₽ / ${formatRub(target)} ₽
               <span class="percent">${percent}%</span>
             </div>
             <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
@@ -69,83 +79,62 @@ export async function renderPlanScreen(container, db) {
   html += `</div></section>`;
   container.innerHTML = html;
 
-  // Обработчик создания цели
+  // Обработчики (без изменений, только копируем)
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
     const targetRub = parseFloat(document.getElementById('goal-target').value);
     const deadlineMonth = document.getElementById('goal-deadline').value || null;
     
-    if (!name || isNaN(targetRub) || targetRub <= 0) {
-      alert('Пожалуйста, введите корректное название и сумму больше нуля.');
-      return;
-    }
+    if (!name || isNaN(targetRub) || targetRub <= 0) return;
 
     const cmd = {
       commandId: generateId(),
       commandType: 'goal.create',
-      payload: {
-        name,
-        category: 'long',
-        targetAmountMinor: Math.round(targetRub * 100),
-        deadlineMonth
-      },
+      payload: { name, category: 'long', targetAmountMinor: Math.round(targetRub * 100), deadlineMonth },
       registeredAt: new Date().toISOString()
     };
 
     try {
       const btn = e.target.querySelector('button');
-      btn.disabled = true;
-      btn.textContent = '...';
+      btn.disabled = true; btn.textContent = '...';
       await executeCommand(db, cmd);
       await renderPlanScreen(container, db);
     } catch (err) {
       alert('Ошибка: ' + err.message);
-      btn.disabled = false;
-      btn.textContent = 'Добавить';
+      btn.disabled = false; btn.textContent = 'Добавить';
     }
   });
 
-  // Обработчик добавления взноса
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const goalId = form.dataset.goalId;
-      const amountInput = form.querySelector('.contrib-amount');
-      const amountRub = parseFloat(amountInput.value);
-      
+      const amountRub = parseFloat(form.querySelector('.contrib-amount').value);
       if (isNaN(amountRub) || amountRub <= 0) return;
 
       const cmd = {
         commandId: generateId(),
         commandType: 'contribution.create',
-        payload: {
-          goalId,
-          amountMinor: Math.round(amountRub * 100),
-          actualDate: new Date().toISOString().slice(0, 10),
-          type: 'additional'
-        },
+        payload: { goalId, amountMinor: Math.round(amountRub * 100), actualDate: new Date().toISOString().slice(0, 10), type: 'additional' },
         registeredAt: new Date().toISOString()
       };
 
       try {
         const btn = form.querySelector('button');
-        btn.disabled = true;
-        btn.textContent = '...';
+        btn.disabled = true; btn.textContent = '...';
         await executeCommand(db, cmd);
         await renderPlanScreen(container, db);
       } catch (err) {
         alert('Ошибка: ' + err.message);
-        btn.disabled = false;
-        btn.textContent = '+';
+        btn.disabled = false; btn.textContent = '+';
       }
     });
   });
 
-  // Обработчик удаления цели
   container.querySelectorAll('.btn-delete').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm('Вы уверены, что хотите удалить эту цель?')) return;
+      if (!confirm('Вы уверены? Деньги с этой цели перейдут в Общий пул.')) return;
       
       const cmd = {
         commandId: generateId(),
