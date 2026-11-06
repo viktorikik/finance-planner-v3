@@ -25,30 +25,29 @@ export function forecastGoal(goal, currentBalanceMinor, plannedMonthlyMinor, gen
   
   const monthlyRate = getMonthlyRate(goal.annualRate);
   const inflation = goal.individualInflationRate ?? generalInflationPercent;
-  const monthlyIndexation = getMonthlyRate(goal.indexationRate);
-
+  
   let currentMonthlyContrib = plannedMonthlyMinor;
 
   while (months < maxMonths) {
     months++;
     
-    // 1. Целевая сумма с учетом инфляции на текущий месяц
-    const targetWithInflation = applyInflation(goal.targetAmountMinor, inflation, months);
-
-    // 2. Проверяем, достигли ли цели
-    if (balance >= targetWithInflation) {
-      break;
-    }
-
-    // 3. Начисляем проценты на текущий остаток
+    // 1. Начисляем проценты на остаток на начало месяца
     balance += balance * monthlyRate;
 
-    // 4. Добавляем плановый взнос
+    // 2. Добавляем плановый взнос за этот месяц
     balance += currentMonthlyContrib;
 
-    // 5. Индексируем взнос раз в 12 месяцев
+    // 3. Индексируем взнос раз в 12 месяцев (для следующих периодов)
     if (months % 12 === 0) {
       currentMonthlyContrib += currentMonthlyContrib * (goal.indexationRate / 100);
+    }
+
+    // 4. Считаем целевую сумму с учетом инфляции на текущий месяц
+    const targetWithInflation = applyInflation(goal.targetAmountMinor, inflation, months);
+
+    // 5. Проверяем, достигли ли цели ПОСЛЕ всех начислений за месяц
+    if (balance >= targetWithInflation) {
+      break;
     }
   }
 
@@ -56,7 +55,7 @@ export function forecastGoal(goal, currentBalanceMinor, plannedMonthlyMinor, gen
     return { monthsToGoal: null, forecastDate: null, isAchievable: false };
   }
 
-  // Рассчитываем дату
+  // Рассчитываем прогнозную дату
   const now = new Date();
   const forecastDate = new Date(now.getFullYear(), now.getMonth() + months, 1);
   const forecastDateStr = `${forecastDate.getFullYear()}-${String(forecastDate.getMonth() + 1).padStart(2, '0')}`;
