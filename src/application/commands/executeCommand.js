@@ -47,7 +47,11 @@ export async function executeCommand(db, command) {
     const existingCommand = await getFromStore('processedCommands', commandId, tx);
     if (existingCommand) throw new DuplicateCommandError(`Команда ${commandId} уже выполнена`);
 
-    let plan = { newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], updatedEntries: [], updatedMovements: [] };
+    // Важно: инициализируем все массивы, чтобы ничего не упало
+    let plan = { 
+      newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
+      updatedEntries: [], updatedMovements: [] 
+    };
     let entityType = 'unknown';
     let entityId = null;
     let state = null;
@@ -151,7 +155,8 @@ export async function executeCommand(db, command) {
     await saveItems('moneyLots', plan.newLots);
     await saveItems('moneyEntries', plan.newEntries);
     await saveItems('moneyMovements', plan.newMovements);
-    // ВОЗВРАЩАЕМ ПРОПУЩЕННЫЕ СТРОКИ:
+    
+    // ЭТИ ДВЕ СТРОКИ БЫЛИ ПОТЕРЯНЫ, ИЗ-ЗА НИХ ПАДАЛ ТЕСТ:
     await saveItems('moneyEntries', plan.updatedEntries);
     await saveItems('moneyMovements', plan.updatedMovements);
     
