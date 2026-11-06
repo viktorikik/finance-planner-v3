@@ -8,13 +8,14 @@ import { planMovementReversal } from '../../domain/money/reversals.js';
 import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
+import { calculateGoalBalance } from '../../domain/statistics/balances.js';
 
 export async function executeCommand(db, command) {
   const { commandId, commandType, payload } = command;
 
   let stores = ['processedCommands', 'auditLog'];
   
-  if (commandType.startsWith('contribution') || commandType === 'money.transfer' || commandType === 'money.reverse') {
+  if (commandType.startsWith('contribution') || commandType === 'money.transfer' || commandType === 'money.reverse' || commandType === 'goal.delete') {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements');
   }
   if (commandType.startsWith('goal') || commandType === 'plannedOperation.create') {
@@ -30,12 +31,13 @@ export async function executeCommand(db, command) {
       throw new DuplicateCommandError(`Команда ${commandId} уже выполнена`);
     }
 
-    let plan;
+    let plan = { newEntries: [], newMovements: [] }; // Дефолтный пустой план
     let entityType = 'unknown';
     let entityId = null;
 
+    // Загружаем состояние для команд, которым нужны деньги
     let state = null;
-    if (commandType === 'money.transfer' || commandType === 'money.reverse') {
+    if (['money.transfer', 'money.reverse', 'goal.delete'].includes(commandType)) {
       state = {
         moneyLots: await getAllFromStore('moneyLots', tx),
         moneyEntries: await getAllFromStore('moneyEntries', tx),
@@ -65,19 +67,33 @@ export async function executeCommand(db, command) {
         entityId = plan.newGoals[0].id;
         break;
       case 'goal.delete':
-        // Прямое удаление цели (в реальной версии здесь нужно переносить деньги в пул, 
-        // но для простоты на этом этапе просто удаляем, если баланс 0)
+        entityType = 'goal';
+        entityId = payload.goalId;
+        
         const goalToDelete = await getFromStore('goals', payload.goalId, tx);
         if (!goalToDelete) throw new Error('Цель не найдена');
-        
+
+        // Считаем баланс цели. Если он > 0, переводим в пул.
+        const balance = calculateGoalBalance(payload.goalId, state.moneyEntries);
+        if (balance > 0) {
+          const transferPlan = planMoneyTransfer({
+            from: { type: 'goal', id: payload.goalId },
+            to: { type: 'pool', id: 'main' },
+            amountMinor: balance,
+            actualDate: new Date().toISOString().slice(0, 10),
+            movementType: 'goalToPool'
+          }, state);
+          
+          plan.newEntries = plan.newEntries.concat(transferPlan.newEntries);
+          plan.newMovements = plan.newMovements.concat(transferPlan.newMovements);
+        }
+
+        // Физически удаляем цель из базы
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('goals').delete(payload.goalId);
           req.onsuccess = resolve;
           req.onerror = () => reject(req.error);
         });
-        entityType = 'goal';
-        entityId = payload.goalId;
-        plan = {}; // Нет новых записей
         break;
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
@@ -108,15 +124,6 @@ export async function executeCommand(db, command) {
       commandType,
       committedAt: new Date().toISOString(),
       resultHash: 'dummy-hash'
-    }, tx);
-
-    await putIntoStore('auditLog', {
-      id: crypto.randomUUID(),
-      eventType: 'command.completed',
-      entityType,
-      entityId,
-      occurredAt: new Date().toISOString(),
-      details: { commandType }
     }, tx);
 
     return { success: true, data: plan };
