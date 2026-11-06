@@ -7,7 +7,7 @@ import { planMoneyTransfer } from '../../domain/money/operations.js';
 import { planMovementReversal } from '../../domain/money/reversals.js';
 import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
-import { generatePlanForGoal } from '../../domain/planning/planGenerator.js'; // <-- НОВЫЙ ИМПОРТ
+import { generatePlanForGoal } from '../../domain/planning/planGenerator.js';
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
 import { calculateGoalBalance } from '../../domain/statistics/balances.js';
 import { calculatePositionBalance } from '../../domain/money/moneyPositions.js';
@@ -47,7 +47,7 @@ export async function executeCommand(db, command) {
     const existingCommand = await getFromStore('processedCommands', commandId, tx);
     if (existingCommand) throw new DuplicateCommandError(`Команда ${commandId} уже выполнена`);
 
-    let plan = { newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [] };
+    let plan = { newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], updatedEntries: [], updatedMovements: [] };
     let entityType = 'unknown';
     let entityId = null;
     let state = null;
@@ -86,21 +86,15 @@ export async function executeCommand(db, command) {
         entityType = 'plannedOperation';
         entityId = plan.newPlannedOperations[0].id;
         break;
-      
-      // НОВОЕ: Пакетная генерация плана
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
         if (!goalForGen) throw new Error('Цель не найдена');
-        // Получаем текущий баланс цели
         const allEntries = await getAllFromStore('moneyEntries', tx);
         const currentBalance = calculateGoalBalance(goalForGen.id, allEntries);
-        
         plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth);
         entityType = 'plannedOperations_batch';
         entityId = payload.goalId;
         break;
-
-      // НОВОЕ: Удаление плановой операции
       case 'plannedOperation.delete':
         entityType = 'plannedOperation';
         entityId = payload.operationId;
@@ -110,7 +104,6 @@ export async function executeCommand(db, command) {
           req.onerror = () => reject(req.error);
         });
         break;
-
       case 'goal.achieve':
         entityType = 'goal';
         entityId = payload.goalId;
@@ -158,6 +151,10 @@ export async function executeCommand(db, command) {
     await saveItems('moneyLots', plan.newLots);
     await saveItems('moneyEntries', plan.newEntries);
     await saveItems('moneyMovements', plan.newMovements);
+    // ВОЗВРАЩАЕМ ПРОПУЩЕННЫЕ СТРОКИ:
+    await saveItems('moneyEntries', plan.updatedEntries);
+    await saveItems('moneyMovements', plan.updatedMovements);
+    
     await saveItems('goals', plan.newGoals);
     await saveItems('plannedOperations', plan.newPlannedOperations);
 
