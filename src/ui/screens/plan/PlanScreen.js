@@ -1,11 +1,14 @@
 /* ==========================================================================
    Экран «План».
-   Исправлена верстка кнопок (теперь они в колонку).
+   Визуальные улучшения: сворачиваемый график, компактные кнопки.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
 import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { generateId } from '../../../domain/shared/ids.js';
+
+// Храним состояние развернутых списков в памяти модуля
+const expandedGoals = new Set();
 
 export async function renderPlanScreen(container, db) {
   const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations'], 'readonly');
@@ -18,7 +21,7 @@ export async function renderPlanScreen(container, db) {
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
   
-  const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU');
+  const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
   const currentMonth = new Date().toISOString().slice(0, 7);
 
   let html = `
@@ -61,27 +64,41 @@ export async function renderPlanScreen(container, db) {
         .filter(op => op.goalId === goal.id && op.state === 'scheduled')
         .sort((a, b) => a.plannedMonth.localeCompare(b.plannedMonth));
 
+      const isExpanded = expandedGoals.has(goal.id);
+      const visiblePlans = isExpanded ? goalPlans : goalPlans.slice(0, 3);
+
       let plansHtml = '';
       if (goalPlans.length > 0) {
         plansHtml = `
-          <div class="goal-plans-list">
-            <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">График взносов:</div>
-            ${goalPlans.map(op => {
-              const d = new Date(op.plannedMonth + '-01');
-              const mName = d.toLocaleDateString('ru-RU', { month: 'short', year: 'numeric' });
-              return `
-                <div class="plan-row">
-                  <span>${mName}: <b>${formatRub(op.plannedAmountMinor)} ₽</b></span>
-                  <button type="button" class="btn-icon delete-plan" data-op-id="${op.id}" style="font-size:16px; padding:0 4px;">×</button>
-                </div>
-              `;
-            }).join('')}
+          <div class="goal-plans-container">
+            <div class="plans-header">
+              <span>График взносов (${goalPlans.length})</span>
+              <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red);">Очистить</button>
+            </div>
+            <div class="plans-list">
+              ${visiblePlans.map(op => {
+                const d = new Date(op.plannedMonth + '-01');
+                const mName = d.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
+                return `
+                  <div class="plan-row">
+                    <span>${mName}</span>
+                    <b>${formatRub(op.plannedAmountMinor)} ₽</b>
+                    <button type="button" class="btn-icon delete-plan" data-op-id="${op.id}" style="color:var(--muted); font-size: 14px;">×</button>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+            ${goalPlans.length > 3 ? `
+              <button type="button" class="btn-text toggle-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 4px;">
+                ${isExpanded ? 'Скрыть' : `Показать все (${goalPlans.length})`}
+              </button>
+            ` : ''}
           </div>
         `;
       }
 
       html += `
-        <div class="goal-item" style="flex-direction: column; align-items: stretch; gap: 12px;">
+        <div class="goal-item">
           <div class="goal-info">
             <div style="display: flex; justify-content: space-between; align-items: flex-start;">
               <strong>${goal.name}</strong>
@@ -99,32 +116,29 @@ export async function renderPlanScreen(container, db) {
 
           ${plansHtml}
 
-          <!-- Блок действий: теперь кнопки в колонку -->
-          <div style="display: flex; flex-direction: column; gap: 8px;">
-            
+          <div class="goal-actions-grid">
             ${goal.deadlineMonth && balance < target && goalPlans.length === 0 ? `
-              <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="width: 100%; background: rgba(255, 200, 87, 0.15); color: #ffc857; border: 1px solid #ffc857; white-space: normal; line-height: 1.3; padding: 12px;">
-                ✨ Сформировать план до ${goal.deadlineMonth}
+              <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}">
+                ✨ Автоплан
               </button>
             ` : ''}
-            
-            <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="width: 100%;">
-              + Свой взнос
+            <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}">
+              + Свой план
             </button>
-
-            <!-- Скрытая форма ручного добавления плана -->
-            <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
-              <input type="month" class="m-month" required value="${currentMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
-              <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
-              <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
-            </form>
-
-            <!-- Форма ФАКТА -->
-            <form class="add-contrib-form" data-goal-id="${goal.id}" style="margin:0; display: flex; gap: 8px;">
-              <input type="number" placeholder="Внести реальные деньги (₽)" required class="contrib-amount" style="flex:1;">
-              <button type="submit" class="btn btn-small" title="Внести факт" style="width: 50px;">+</button>
-            </form>
           </div>
+
+          <!-- Скрытая форма ручного добавления плана -->
+          <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px; margin-bottom: 8px;">
+            <input type="month" class="m-month" required value="${currentMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
+            <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
+            <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
+          </form>
+
+          <!-- Форма ФАКТА -->
+          <form class="add-contrib-form" data-goal-id="${goal.id}">
+            <input type="number" placeholder="Внести фактические деньги (₽)" required class="contrib-amount">
+            <button type="submit" class="btn btn-small" title="Внести факт">+</button>
+          </form>
         </div>
       `;
     }
@@ -168,6 +182,33 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
+  // Показать/Скрыть все планы
+  container.querySelectorAll('.toggle-plans-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const goalId = btn.dataset.goalId;
+      if (expandedGoals.has(goalId)) expandedGoals.delete(goalId);
+      else expandedGoals.add(goalId);
+      renderPlanScreen(container, db);
+    });
+  });
+
+  // Очистить весь план цели
+  container.querySelectorAll('.clear-plans-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Удалить ВСЕ плановые взносы для этой цели?')) return;
+      const goalId = btn.dataset.goalId;
+      const cmd = {
+        commandId: generateId(), commandType: 'plannedOperation.clearForGoal',
+        payload: { goalId }, registeredAt: new Date().toISOString()
+      };
+      try {
+        btn.disabled = true; btn.textContent = '...';
+        await executeCommand(db, cmd); await renderPlanScreen(container, db);
+      } catch (err) { alert('Ошибка: ' + err.message); btn.disabled = false; }
+    });
+  });
+
+  // Автоплан
   container.querySelectorAll('.auto-plan-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Система разделит оставшуюся сумму на равные части до дедлайна. Продолжить?')) return;
@@ -183,6 +224,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Удалить один план
   container.querySelectorAll('.delete-plan').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Удалить этот плановый взнос?')) return;
@@ -196,6 +238,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Показать форму ручного ввода
   container.querySelectorAll('.toggle-manual-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const goalId = btn.dataset.goalId;
@@ -204,6 +247,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Ручное добавление
   container.querySelectorAll('.manual-plan-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -224,6 +268,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Фактический взнос
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -243,6 +288,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Достижение цели
   container.querySelectorAll('.btn-icon.achieve').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Цель достигнута! Деньги списываются, цель уходит в архив.')) return;
@@ -254,19 +300,18 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Удаление цели
   container.querySelectorAll('.btn-icon.delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const goalId = btn.dataset.goalId;
       const goal = activeGoals.find(g => g.id === goalId);
       const balance = calculateGoalBalance(goalId, moneyEntries);
       let moveToPool = false;
-
       if (balance > 0) {
         moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Общий пул.\nОтмена — сжечь (удалить).`);
       } else {
         if (!confirm('Удалить цель?')) return;
       }
-      
       const cmd = {
         commandId: generateId(), commandType: 'goal.delete',
         payload: { goalId, moveToPool }, registeredAt: new Date().toISOString()
