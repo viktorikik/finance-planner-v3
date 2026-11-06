@@ -2,7 +2,7 @@
    Service Worker для планировщика финансов v3.
    ========================================================================== */
 
-const CACHE_VERSION = 'finance-planner-v3-cache-v3'; // <-- ОБНОВЛЕНО
+const CACHE_VERSION = 'finance-planner-v3-cache-v6'; // <-- ОБНОВЛЕНО (было v5/v4)
 
 const SHELL = [
   './',
@@ -33,7 +33,6 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
-
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
@@ -48,7 +47,6 @@ self.addEventListener('fetch', (event) => {
           return response;
         })
         .catch(() => cached);
-
       return cached || networkPromise;
     })
   );
