@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлена автогенерация графика и визуализация созданных планов.
+   Исправлена верстка кнопок (теперь они в колонку).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -20,7 +20,6 @@ export async function renderPlanScreen(container, db) {
   
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU');
   const currentMonth = new Date().toISOString().slice(0, 7);
-  const currentMonthLabel = new Date().toLocaleDateString('ru-RU', { month: 'long' });
 
   let html = `
     <div style="text-align: center; margin-bottom: 20px;">
@@ -58,12 +57,10 @@ export async function renderPlanScreen(container, db) {
       const target = goal.targetAmountMinor;
       const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
       
-      // Получаем планы для этой цели
       const goalPlans = allPlannedOps
         .filter(op => op.goalId === goal.id && op.state === 'scheduled')
         .sort((a, b) => a.plannedMonth.localeCompare(b.plannedMonth));
 
-      // Рендер списка планов
       let plansHtml = '';
       if (goalPlans.length > 0) {
         plansHtml = `
@@ -102,30 +99,30 @@ export async function renderPlanScreen(container, db) {
 
           ${plansHtml}
 
-          <!-- Блок действий -->
-          <div class="goal-actions">
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-              ${goal.deadlineMonth && balance < target && goalPlans.length === 0 ? `
-                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex:1; background: rgba(255, 200, 87, 0.15); color: #ffc857; border: 1px solid #ffc857;">
-                  ✨ Сформировать план до ${goal.deadlineMonth}
-                </button>
-              ` : ''}
-              <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex:1;">
-                + Свой взнос
+          <!-- Блок действий: теперь кнопки в колонку -->
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            
+            ${goal.deadlineMonth && balance < target && goalPlans.length === 0 ? `
+              <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="width: 100%; background: rgba(255, 200, 87, 0.15); color: #ffc857; border: 1px solid #ffc857; white-space: normal; line-height: 1.3; padding: 12px;">
+                ✨ Сформировать план до ${goal.deadlineMonth}
               </button>
-            </div>
+            ` : ''}
+            
+            <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="width: 100%;">
+              + Свой взнос
+            </button>
 
             <!-- Скрытая форма ручного добавления плана -->
-            <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; gap:6px; margin-bottom: 8px;">
-              <input type="month" class="m-month" required value="${currentMonth}" style="flex:1; padding: 8px; font-size: 14px;">
-              <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="flex:1; padding: 8px; font-size: 14px;">
-              <button type="submit" class="btn btn-small" style="background: var(--accent);">ОК</button>
+            <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
+              <input type="month" class="m-month" required value="${currentMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
+              <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
+              <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
             </form>
 
             <!-- Форма ФАКТА -->
-            <form class="add-contrib-form" data-goal-id="${goal.id}" style="margin:0;">
+            <form class="add-contrib-form" data-goal-id="${goal.id}" style="margin:0; display: flex; gap: 8px;">
               <input type="number" placeholder="Внести реальные деньги (₽)" required class="contrib-amount" style="flex:1;">
-              <button type="submit" class="btn btn-small" title="Внести факт">+</button>
+              <button type="submit" class="btn btn-small" title="Внести факт" style="width: 50px;">+</button>
             </form>
           </div>
         </div>
@@ -153,7 +150,6 @@ export async function renderPlanScreen(container, db) {
 
   /* --- ОБРАБОТЧИКИ --- */
 
-  // Создание цели
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
@@ -172,7 +168,6 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
-  // Автогенерация плана
   container.querySelectorAll('.auto-plan-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Система разделит оставшуюся сумму на равные части до дедлайна. Продолжить?')) return;
@@ -188,7 +183,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Удаление плана (крестик)
   container.querySelectorAll('.delete-plan').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Удалить этот плановый взнос?')) return;
@@ -202,7 +196,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Показ/скрытие формы ручного ввода
   container.querySelectorAll('.toggle-manual-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const goalId = btn.dataset.goalId;
@@ -211,7 +204,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Ручное добавление плана
   container.querySelectorAll('.manual-plan-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -232,7 +224,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Фактический взнос
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -252,7 +243,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Достижение цели
   container.querySelectorAll('.btn-icon.achieve').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Цель достигнута! Деньги списываются, цель уходит в архив.')) return;
@@ -264,7 +254,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Удаление цели
   container.querySelectorAll('.btn-icon.delete').forEach(btn => {
     btn.addEventListener('click', async () => {
       const goalId = btn.dataset.goalId;
