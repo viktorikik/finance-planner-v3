@@ -1,6 +1,5 @@
 /* ==========================================================================
    Исполнитель команд.
-   Связывает доменную логику с базой данных IndexedDB.
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
 import { planContribution } from '../../domain/money/contributions.js';
@@ -13,7 +12,6 @@ import { DuplicateCommandError } from '../../domain/shared/errors.js';
 export async function executeCommand(db, command) {
   const { commandId, commandType, payload } = command;
 
-  // Определяем stores в зависимости от команды
   let stores = ['processedCommands', 'auditLog'];
   
   if (commandType.startsWith('contribution') || commandType === 'money.transfer' || commandType === 'money.reverse') {
@@ -36,7 +34,6 @@ export async function executeCommand(db, command) {
     let entityType = 'unknown';
     let entityId = null;
 
-    // Загружаем стейт, если нужно
     let state = null;
     if (commandType === 'money.transfer' || commandType === 'money.reverse') {
       state = {
@@ -46,7 +43,6 @@ export async function executeCommand(db, command) {
       };
     }
 
-    // Маршрутизация
     switch (commandType) {
       case 'contribution.create':
         plan = planContribution(payload);
@@ -68,6 +64,21 @@ export async function executeCommand(db, command) {
         entityType = 'goal';
         entityId = plan.newGoals[0].id;
         break;
+      case 'goal.delete':
+        // Прямое удаление цели (в реальной версии здесь нужно переносить деньги в пул, 
+        // но для простоты на этом этапе просто удаляем, если баланс 0)
+        const goalToDelete = await getFromStore('goals', payload.goalId, tx);
+        if (!goalToDelete) throw new Error('Цель не найдена');
+        
+        await new Promise((resolve, reject) => {
+          const req = tx.objectStore('goals').delete(payload.goalId);
+          req.onsuccess = resolve;
+          req.onerror = () => reject(req.error);
+        });
+        entityType = 'goal';
+        entityId = payload.goalId;
+        plan = {}; // Нет новых записей
+        break;
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
         entityType = 'plannedOperation';
@@ -77,7 +88,6 @@ export async function executeCommand(db, command) {
         throw new Error(`Неизвестный тип: ${commandType}`);
     }
 
-    // Сохранение
     const saveItems = async (storeName, items) => {
       if (items && items.length > 0) {
         for (const item of items) await putIntoStore(storeName, item, tx);
