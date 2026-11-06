@@ -4,8 +4,8 @@
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
-import { createCommand } from '../../../application/services/commandExecutor.js';
 import { calculateGoalBalance } from '../../../domain/statistics/balances.js';
+import { generateId } from '../../../domain/shared/ids.js';
 
 /**
  * Рендерит экран «План».
@@ -40,7 +40,7 @@ export async function renderPlanScreen(container, db) {
     for (const goal of goals) {
       const balance = calculateGoalBalance(goal.id, moneyEntries);
       const target = goal.targetAmountMinor;
-      const percent = Math.min(100, Math.round((balance / target) * 100));
+      const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
       
       html += `
         <div class="goal-item">
@@ -62,10 +62,9 @@ export async function renderPlanScreen(container, db) {
   }
 
   html += `</div></section>`;
-
   container.innerHTML = html;
 
-  // 3. Навешиваем обработчики
+  // 3. Обработчик создания цели
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
@@ -73,12 +72,17 @@ export async function renderPlanScreen(container, db) {
     
     if (!name || isNaN(targetRub) || targetRub <= 0) return;
 
-    const cmd = createCommand('goal.create', {
-      name,
-      category: 'long',
-      targetAmountMinor: Math.round(targetRub * 100),
-      deadlineMonth: null
-    });
+    const cmd = {
+      commandId: generateId(),
+      commandType: 'goal.create',
+      payload: {
+        name,
+        category: 'long',
+        targetAmountMinor: Math.round(targetRub * 100),
+        deadlineMonth: null
+      },
+      registeredAt: new Date().toISOString()
+    };
 
     try {
       const btn = e.target.querySelector('button');
@@ -86,7 +90,7 @@ export async function renderPlanScreen(container, db) {
       btn.textContent = '...';
       
       await executeCommand(db, cmd);
-      await renderPlanScreen(container, db); // Перерисовываем экран
+      await renderPlanScreen(container, db);
     } catch (err) {
       alert('Ошибка: ' + err.message);
       btn.disabled = false;
@@ -94,6 +98,7 @@ export async function renderPlanScreen(container, db) {
     }
   });
 
+  // 4. Обработчик добавления взноса
   container.querySelectorAll('.add-contrib-form').forEach(form => {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -103,12 +108,17 @@ export async function renderPlanScreen(container, db) {
       
       if (isNaN(amountRub) || amountRub <= 0) return;
 
-      const cmd = createCommand('contribution.create', {
-        goalId,
-        amountMinor: Math.round(amountRub * 100),
-        actualDate: new Date().toISOString().slice(0, 10),
-        type: 'additional'
-      });
+      const cmd = {
+        commandId: generateId(),
+        commandType: 'contribution.create',
+        payload: {
+          goalId,
+          amountMinor: Math.round(amountRub * 100),
+          actualDate: new Date().toISOString().slice(0, 10),
+          type: 'additional'
+        },
+        registeredAt: new Date().toISOString()
+      };
 
       try {
         const btn = form.querySelector('button');
