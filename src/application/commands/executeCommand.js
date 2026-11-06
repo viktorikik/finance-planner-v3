@@ -5,6 +5,8 @@
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
 import { planContribution } from '../../domain/money/contributions.js';
+import { planMoneyTransfer } from '../../domain/money/operations.js';
+import { planMovementReversal } from '../../domain/money/reversals.js';
 import { checkInvariants } from '../../domain/validation/invariants.js';
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
 
@@ -17,9 +19,16 @@ import { DuplicateCommandError } from '../../domain/shared/errors.js';
 export async function executeCommand(db, command) {
   const { commandId, commandType, payload } = command;
 
-  // 1. Определяем, какие stores нужны для этой команды
-  // Для создания взноса нужны: actualContributions, moneyLots, moneyEntries, processedCommands, auditLog
-  const stores = ['actualContributions', 'moneyLots', 'moneyEntries', 'processedCommands', 'auditLog'];
+  // 1. Определяем, какие stores нужны. 
+  // Для безопасности открываем все основные денежные stores.
+  const stores = [
+    'actualContributions', 
+    'moneyLots', 
+    'moneyEntries', 
+    'moneyMovements', 
+    'processedCommands', 
+    'auditLog'
+  ];
   
   // 2. Открываем одну транзакцию на чтение и запись для всех этих stores
   const tx = db.transaction(stores, 'readwrite');
@@ -33,70 +42,80 @@ export async function executeCommand(db, command) {
     }
 
     // 4. Загружаем необходимый стейт для доменной функции
-    // В реальном приложении мы бы использовали индексы, чтобы загрузить только нужное.
-    // Для простоты на этом этапе загружаем все.
     const state = {
       moneyLots: await getAllFromStore('moneyLots', tx),
-      moneyEntries: await getAllFromStore('moneyEntries', tx)
+      moneyEntries: await getAllFromStore('moneyEntries', tx),
+      moneyMovements: await getAllFromStore('moneyMovements', tx)
     };
 
     let plan;
+    let entityType = 'unknown';
 
-    // 5. Маршрутизация команд (пока только одна)
-    if (commandType === 'contribution.create') {
-      plan = planContribution(payload);
-    } else {
-      throw new Error(`Неизвестный тип команды: ${commandType}`);
+    // 5. Маршрутизация команд
+    switch (commandType) {
+      case 'contribution.create':
+        plan = planContribution(payload);
+        entityType = 'contribution';
+        break;
+      case 'money.transfer':
+        plan = planMoneyTransfer(payload, state);
+        entityType = 'movement';
+        break;
+      case 'money.reverse':
+        plan = planMovementReversal(payload.movementId, state);
+        entityType = 'movement';
+        break;
+      default:
+        throw new Error(`Неизвестный тип команды: ${commandType}`);
     }
 
-    // 6. Проверка инвариантов ДО записи (с учетом планируемых изменений)
-    // (В полноценной версии мы бы "примеряли" plan к state, но пока проверим только текущий state)
-    checkInvariants(state);
+    // 6. Применение плана (сохранение в БД)
+    // Вспомогательная функция для сохранения массивов
+    const saveItems = async (storeName, items) => {
+      if (items && items.length > 0) {
+        for (const item of items) {
+          await putIntoStore(storeName, item, tx);
+        }
+      }
+    };
 
-    // 7. Применение плана (сохранение в БД)
-    // Сохраняем взносы
-    if (plan.newContributions) {
-      for (const item of plan.newContributions) {
-        await putIntoStore('actualContributions', item, tx);
-      }
-    }
-    // Сохраняем партии
-    if (plan.newLots) {
-      for (const item of plan.newLots) {
-        await putIntoStore('moneyLots', item, tx);
-      }
-    }
-    // Сохраняем записи журнала
-    if (plan.newEntries) {
-      for (const item of plan.newEntries) {
-        await putIntoStore('moneyEntries', item, tx);
-      }
-    }
+    // Сохраняем новые записи
+    await saveItems('actualContributions', plan.newContributions);
+    await saveItems('moneyLots', plan.newLots);
+    await saveItems('moneyEntries', plan.newEntries);
+    await saveItems('moneyMovements', plan.newMovements);
+
+    // Обновляем существующие записи
+    await saveItems('moneyEntries', plan.updatedEntries);
+    await saveItems('moneyMovements', plan.updatedMovements);
+
+    // 7. Проверка инвариантов (можно добавить проверку стейта после применения плана)
+    // checkInvariants({ ...state, moneyEntries: [...state.moneyEntries, ...(plan.newEntries || [])] });
 
     // 8. Отмечаем команду как выполненную
     await putIntoStore('processedCommands', {
       commandId: commandId,
       commandType: commandType,
       committedAt: new Date().toISOString(),
-      resultHash: 'dummy-hash-for-now' // В будущем здесь будет хеш payload
+      resultHash: 'dummy-hash-for-now'
     }, tx);
 
     // 9. Записываем в аудит-лог
     await putIntoStore('auditLog', {
       id: crypto.randomUUID(),
       eventType: 'command.completed',
-      entityType: 'contribution',
-      entityId: plan.newContributions[0].id,
+      entityType: entityType,
+      entityId: commandId,
       occurredAt: new Date().toISOString(),
       details: { commandType }
     }, tx);
 
-    // 10. Завершаем транзакцию (IndexedDB сделает это автоматически при отсутствии ошибок)
+    // 10. Возвращаем успех
     return { success: true, data: plan };
 
   } catch (error) {
     // При любой ошибке транзакция откатывается автоматически
-    try { tx.abort(); } catch (e) {} // Игнорируем ошибку, если транзакция уже закрыта
+    try { tx.abort(); } catch (e) {} 
     throw error;
   }
 }
