@@ -66,13 +66,23 @@ body {
 .form-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .form-row input { flex: 1; min-width: 120px; }
 
-input {
+input, select {
   background: var(--card-2); border: 1px solid var(--border); border-radius: 10px;
   color: var(--text); padding: 12px 14px; font-family: inherit; font-size: 16px; outline: none;
   transition: border-color 0.2s;
 }
 input:focus { border-color: var(--accent); }
 input::placeholder { color: #5b6175; }
+
+/* Фиксы для дат/месяцев на iOS */
+input[type="month"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  min-height: 46px;
+  text-align: left;
+}
 
 .btn {
   background: var(--accent); color: #fff; border: none; border-radius: 10px;
@@ -82,6 +92,12 @@ input::placeholder { color: #5b6175; }
 .btn:hover { background: var(--accent-hover); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-small { padding: 12px 16px; font-size: 18px; line-height: 1; }
+
+.btn-delete {
+  background: transparent; border: none; color: var(--muted); font-size: 24px;
+  cursor: pointer; line-height: 1; padding: 0 4px; transition: color 0.15s;
+}
+.btn-delete:hover { color: var(--red); }
 
 /* Список целей */
 .goal-item { background: var(--card-2); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
