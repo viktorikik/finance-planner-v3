@@ -37,7 +37,6 @@ export async function executeCommand(db, command) {
 
   let stores = ['processedCommands', 'auditLog', 'goals', 'plannedOperations'];
   
-  // ДОБАВЛЕНА КОМАНДА plannedOperation.generate, ЧТОБЫ РАЗРЕШИТЬ ЧТЕНИЕ moneyEntries
   if (
     commandType.startsWith('contribution') || 
     commandType === 'money.transfer' || 
@@ -59,8 +58,6 @@ export async function executeCommand(db, command) {
       newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
       updatedEntries: [], updatedMovements: [] 
     };
-    let entityType = 'unknown';
-    let entityId = null;
     let state = null;
 
     if (['money.transfer', 'money.reverse', 'goal.delete', 'goal.achieve'].includes(commandType)) {
@@ -74,28 +71,18 @@ export async function executeCommand(db, command) {
     switch (commandType) {
       case 'contribution.create':
         plan = planContribution(payload);
-        entityType = 'contribution';
-        entityId = plan.newContributions[0].id;
         break;
       case 'money.transfer':
         plan = planMoneyTransfer(payload, state);
-        entityType = 'movement';
-        entityId = plan.newMovements[0].id;
         break;
       case 'money.reverse':
         plan = planMovementReversal(payload.movementId, state);
-        entityType = 'movement';
-        entityId = payload.movementId;
         break;
       case 'goal.create':
         plan = planGoalCreate(payload);
-        entityType = 'goal';
-        entityId = plan.newGoals[0].id;
         break;
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
-        entityType = 'plannedOperation';
-        entityId = plan.newPlannedOperations[0].id;
         break;
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
@@ -103,30 +90,33 @@ export async function executeCommand(db, command) {
         const allEntries = await getAllFromStore('moneyEntries', tx);
         const currentBalance = calculateGoalBalance(goalForGen.id, allEntries);
         plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth);
-        entityType = 'plannedOperations_batch';
-        entityId = payload.goalId;
         break;
       case 'plannedOperation.delete':
-        entityType = 'plannedOperation';
-        entityId = payload.operationId;
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('plannedOperations').delete(payload.operationId);
           req.onsuccess = resolve;
           req.onerror = () => reject(req.error);
         });
         break;
+      // НОВАЯ КОМАНДА: Удалить все планы для цели
+      case 'plannedOperation.clearForGoal':
+        const allOpsForGoal = await getAllFromStore('plannedOperations', tx);
+        const opsToDelete = allOpsForGoal.filter(op => op.goalId === payload.goalId);
+        for (const op of opsToDelete) {
+          await new Promise((resolve, reject) => {
+            const req = tx.objectStore('plannedOperations').delete(op.id);
+            req.onsuccess = resolve;
+            req.onerror = () => reject(req.error);
+          });
+        }
+        break;
       case 'goal.achieve':
-        entityType = 'goal';
-        entityId = payload.goalId;
         const goalToAchieve = await getFromStore('goals', payload.goalId, tx);
         if (!goalToAchieve) throw new Error('Цель не найдена');
         plan.newEntries = burnGoalMoney(payload.goalId, state.moneyEntries);
-        const updatedGoal = { ...goalToAchieve, status: 'achieved', achievedAt: new Date().toISOString().slice(0, 10) };
-        plan.newGoals.push(updatedGoal);
+        plan.newGoals.push({ ...goalToAchieve, status: 'achieved', achievedAt: new Date().toISOString().slice(0, 10) });
         break;
       case 'goal.delete':
-        entityType = 'goal';
-        entityId = payload.goalId;
         const goalToDelete = await getFromStore('goals', payload.goalId, tx);
         if (!goalToDelete) throw new Error('Цель не найдена');
         const balance = calculateGoalBalance(payload.goalId, state.moneyEntries);
