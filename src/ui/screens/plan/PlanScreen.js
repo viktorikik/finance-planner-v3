@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Визуальный рефакторинг: форма создания цели и список планов.
+   Добавлен блок учета фактических доходов.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -10,10 +10,11 @@ import { generateId } from '../../../domain/shared/ids.js';
 const expandedGoals = new Set();
 
 export async function renderPlanScreen(container, db) {
-  const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations'], 'readonly');
+  const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes'], 'readonly');
   const goals = await getAllFromStore('goals', tx);
   const moneyEntries = await getAllFromStore('moneyEntries', tx);
   const allPlannedOps = await getAllFromStore('plannedOperations', tx);
+  const actualIncomes = await getAllFromStore('actualIncomes', tx);
 
   const activeGoals = goals.filter(g => g.status === 'active');
   const achievedGoals = goals.filter(g => g.status === 'achieved');
@@ -22,16 +23,36 @@ export async function renderPlanScreen(container, db) {
   
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
   const currentMonth = new Date().toISOString().slice(0, 7);
+  const currentDate = new Date().toISOString().slice(0, 10);
   
-  // Устанавливаем дефолтный дедлайн (следующий год), чтобы iOS его отобразил
-  const nextYear = new Date().getFullYear() + 1;
-  const defaultDeadline = `${nextYear}-12`;
+  // Доходы за текущий месяц
+  const currentMonthIncomes = actualIncomes
+    .filter(inc => inc.actualDate.startsWith(currentMonth))
+    .reduce((sum, inc) => sum + inc.amountMinor, 0);
 
   let html = `
     <div style="text-align: center; margin-bottom: 20px;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
       <div style="font-size: 32px; font-weight: 800; color: var(--green);">${formatRub(totalAccumulated)} ₽</div>
     </div>
+
+    <!-- Блок ДОХОДОВ -->
+    <section class="card" style="border-color: var(--border);">
+      <h2 style="display: flex; justify-content: space-between; align-items: center;">
+        <span>Доходы в этом месяце</span>
+        <span style="color: var(--accent); font-size: 18px;">+${formatRub(currentMonthIncomes)} ₽</span>
+      </h2>
+      <form id="add-income-form" style="display: flex; gap: 8px; align-items: center;">
+        <input type="number" id="income-amount" placeholder="Сумма (₽)" required style="flex: 1; min-width: 0; padding: 10px 14px; font-size: 14px;">
+        <select id="income-category" style="padding: 10px 14px; font-size: 14px; width: auto;">
+          <option value="salary">Зарплата</option>
+          <option value="freelance">Фриланс</option>
+          <option value="gift">Подарок</option>
+          <option value="other">Другое</option>
+        </select>
+        <button type="submit" class="btn btn-small" style="flex-shrink: 0;">+</button>
+      </form>
+    </section>
 
     ${poolBalance > 0 ? `
       <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
@@ -46,7 +67,7 @@ export async function renderPlanScreen(container, db) {
         <input type="text" id="goal-name" placeholder="Название цели" required>
         <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
         <div class="form-row-bottom">
-          <input type="month" id="goal-deadline" required value="${defaultDeadline}">
+          <input type="month" id="goal-deadline" required value="${new Date().getFullYear() + 1}-12">
           <button type="submit" class="btn">Создать</button>
         </div>
       </form>
@@ -132,14 +153,12 @@ export async function renderPlanScreen(container, db) {
             </button>
           </div>
 
-          <!-- Скрытая форма ручного добавления плана -->
           <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px; margin-bottom: 8px;">
             <input type="month" class="m-month" required value="${currentMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
             <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
             <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
           </form>
 
-          <!-- Форма ФАКТА -->
           <form class="add-contrib-form" data-goal-id="${goal.id}">
             <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
             <button type="submit" class="btn btn-small" title="Внести факт">+</button>
@@ -168,6 +187,29 @@ export async function renderPlanScreen(container, db) {
   container.innerHTML = html;
 
   /* --- ОБРАБОТЧИКИ --- */
+
+  // Добавление дохода
+  document.getElementById('add-income-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const amountRub = parseFloat(document.getElementById('income-amount').value);
+    const category = document.getElementById('income-category').value;
+    if (isNaN(amountRub) || amountRub <= 0) return;
+
+    const cmd = {
+      commandId: generateId(), commandType: 'actualIncome.create',
+      payload: { amountMinor: Math.round(amountRub * 100), actualDate: currentDate, category },
+      registeredAt: new Date().toISOString()
+    };
+    
+    try {
+      const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = '...';
+      await executeCommand(db, cmd);
+      await renderPlanScreen(container, db);
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+      e.target.querySelector('button').disabled = false;
+    }
+  });
 
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -200,14 +242,8 @@ export async function renderPlanScreen(container, db) {
     btn.addEventListener('click', async () => {
       if (!confirm('Удалить ВСЕ плановые взносы для этой цели?')) return;
       const goalId = btn.dataset.goalId;
-      const cmd = {
-        commandId: generateId(), commandType: 'plannedOperation.clearForGoal',
-        payload: { goalId }, registeredAt: new Date().toISOString()
-      };
-      try {
-        btn.disabled = true; btn.textContent = '...';
-        await executeCommand(db, cmd); await renderPlanScreen(container, db);
-      } catch (err) { alert('Ошибка: ' + err.message); btn.disabled = false; }
+      const cmd = { commandId: generateId(), commandType: 'plannedOperation.clearForGoal', payload: { goalId }, registeredAt: new Date().toISOString() };
+      try { btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); btn.disabled = false; }
     });
   });
 
@@ -215,34 +251,22 @@ export async function renderPlanScreen(container, db) {
     btn.addEventListener('click', async () => {
       if (!confirm('Система разделит оставшуюся сумму на равные части до дедлайна. Продолжить?')) return;
       const goalId = btn.dataset.goalId;
-      const cmd = {
-        commandId: generateId(), commandType: 'plannedOperation.generate',
-        payload: { goalId, currentMonth }, registeredAt: new Date().toISOString()
-      };
-      try {
-        btn.disabled = true; btn.textContent = '...';
-        await executeCommand(db, cmd); await renderPlanScreen(container, db);
-      } catch (err) { alert('Ошибка: ' + err.message); btn.disabled = false; }
+      const cmd = { commandId: generateId(), commandType: 'plannedOperation.generate', payload: { goalId, currentMonth }, registeredAt: new Date().toISOString() };
+      try { btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); btn.disabled = false; }
     });
   });
 
   container.querySelectorAll('.delete-plan').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Удалить этот плановый взнос?')) return;
-      const cmd = {
-        commandId: generateId(), commandType: 'plannedOperation.delete',
-        payload: { operationId: btn.dataset.opId }, registeredAt: new Date().toISOString()
-      };
-      try {
-        await executeCommand(db, cmd); await renderPlanScreen(container, db);
-      } catch (err) { alert('Ошибка: ' + err.message); }
+      const cmd = { commandId: generateId(), commandType: 'plannedOperation.delete', payload: { operationId: btn.dataset.opId }, registeredAt: new Date().toISOString() };
+      try { await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); }
     });
   });
 
   container.querySelectorAll('.toggle-manual-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      const goalId = btn.dataset.goalId;
-      const form = container.querySelector(`.manual-plan-form[data-goal-id="${goalId}"]`);
+      const form = container.querySelector(`.manual-plan-form[data-goal-id="${btn.dataset.goalId}"]`);
       form.style.display = form.style.display === 'none' ? 'flex' : 'none';
     });
   });
@@ -255,22 +279,11 @@ export async function renderPlanScreen(container, db) {
       const amountRub = parseFloat(form.querySelector('.m-amount').value);
       if (!plannedMonth || isNaN(amountRub) || amountRub <= 0) return;
 
-      // Проверка на дубликат месяца
       const existing = allPlannedOps.find(op => op.goalId === goalId && op.plannedMonth === plannedMonth);
-      if (existing) {
-        alert('На этот месяц уже есть плановый взнос!');
-        return;
-      }
+      if (existing) { alert('На этот месяц уже есть плановый взнос!'); return; }
 
-      const cmd = {
-        commandId: generateId(), commandType: 'plannedOperation.create',
-        payload: { goalId, plannedMonth, plannedAmountMinor: Math.round(amountRub * 100) },
-        registeredAt: new Date().toISOString()
-      };
-      try {
-        const btn = form.querySelector('button'); btn.disabled = true; btn.textContent = '...';
-        await executeCommand(db, cmd); await renderPlanScreen(container, db);
-      } catch (err) { alert('Ошибка: ' + err.message); form.querySelector('button').disabled = false; }
+      const cmd = { commandId: generateId(), commandType: 'plannedOperation.create', payload: { goalId, plannedMonth, plannedAmountMinor: Math.round(amountRub * 100) }, registeredAt: new Date().toISOString() };
+      try { const btn = form.querySelector('button'); btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); form.querySelector('button').disabled = false; }
     });
   });
 
@@ -281,25 +294,15 @@ export async function renderPlanScreen(container, db) {
       const amountRub = parseFloat(form.querySelector('.contrib-amount').value);
       if (isNaN(amountRub) || amountRub <= 0) return;
 
-      const cmd = {
-        commandId: generateId(), commandType: 'contribution.create',
-        payload: { goalId, amountMinor: Math.round(amountRub * 100), actualDate: new Date().toISOString().slice(0, 10), type: 'additional' },
-        registeredAt: new Date().toISOString()
-      };
-      try {
-        const btn = form.querySelector('button'); btn.disabled = true; btn.textContent = '...';
-        await executeCommand(db, cmd); await renderPlanScreen(container, db);
-      } catch (err) { alert('Ошибка: ' + err.message); form.querySelector('button').disabled = false; }
+      const cmd = { commandId: generateId(), commandType: 'contribution.create', payload: { goalId, amountMinor: Math.round(amountRub * 100), actualDate: currentDate, type: 'additional' }, registeredAt: new Date().toISOString() };
+      try { const btn = form.querySelector('button'); btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); form.querySelector('button').disabled = false; }
     });
   });
 
   container.querySelectorAll('.btn-icon.achieve').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Цель достигнута! Деньги списываются, цель уходит в архив.')) return;
-      const cmd = {
-        commandId: generateId(), commandType: 'goal.achieve',
-        payload: { goalId: btn.dataset.goalId }, registeredAt: new Date().toISOString()
-      };
+      const cmd = { commandId: generateId(), commandType: 'goal.achieve', payload: { goalId: btn.dataset.goalId }, registeredAt: new Date().toISOString() };
       try { await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); }
     });
   });
@@ -310,15 +313,8 @@ export async function renderPlanScreen(container, db) {
       const goal = activeGoals.find(g => g.id === goalId);
       const balance = calculateGoalBalance(goalId, moneyEntries);
       let moveToPool = false;
-      if (balance > 0) {
-        moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Общий пул.\nОтмена — сжечь (удалить).`);
-      } else {
-        if (!confirm('Удалить цель?')) return;
-      }
-      const cmd = {
-        commandId: generateId(), commandType: 'goal.delete',
-        payload: { goalId, moveToPool }, registeredAt: new Date().toISOString()
-      };
+      if (balance > 0) { moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Общий пул.\nОтмена — сжечь (удалить).`); } else { if (!confirm('Удалить цель?')) return; }
+      const cmd = { commandId: generateId(), commandType: 'goal.delete', payload: { goalId, moveToPool }, registeredAt: new Date().toISOString() };
       try { await executeCommand(db, cmd); await renderPlanScreen(container, db); } catch (err) { alert(err.message); }
     });
   });
