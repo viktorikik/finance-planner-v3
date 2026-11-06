@@ -2,11 +2,7 @@
    Планировщик финансов v3 — стили.
    ========================================================================== */
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
   color-scheme: dark;
@@ -20,6 +16,7 @@
   --accent-hover: #9179ff;
   --green: #3ddc97;
   --red: #ff5c7c;
+  --yellow: #ffc857;
 }
 
 body {
@@ -74,47 +71,47 @@ input, select {
 input:focus { border-color: var(--accent); }
 input::placeholder { color: #5b6175; }
 
-/* Фиксы для дат/месяцев на iOS */
-input[type="month"] {
-  -webkit-appearance: none;
-  appearance: none;
-  display: flex;
-  align-items: center;
-  min-height: 46px;
-  text-align: left;
-}
-
-.btn {
-  background: var(--accent); color: #fff; border: none; border-radius: 10px;
-  padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer;
-  transition: all 0.15s; white-space: nowrap;
-}
+.btn { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .btn:hover { background: var(--accent-hover); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-small { padding: 12px 16px; font-size: 18px; line-height: 1; }
+.btn-small { padding: 10px 16px; font-size: 14px; line-height: 1; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-outline:hover { background: var(--card-2); border-color: var(--accent); }
+.btn-text { background: none; border: none; color: var(--accent); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; padding: 4px; }
 
-/* Новые кнопки-иконки */
-.btn-icon {
-  background: transparent; border: none; cursor: pointer; font-size: 20px; line-height: 1;
-  padding: 4px; border-radius: 6px; transition: all 0.15s;
-}
+.btn-icon { background: transparent; border: none; cursor: pointer; font-size: 20px; line-height: 1; padding: 4px; border-radius: 6px; transition: all 0.15s; }
 .btn-icon.delete { color: var(--muted); }
 .btn-icon.delete:hover { color: var(--red); background: rgba(255, 92, 124, 0.1); }
 .btn-icon.achieve { color: var(--green); }
 .btn-icon.achieve:hover { background: rgba(61, 220, 151, 0.1); }
 
 /* Список целей */
-.goal-item { background: var(--card-2); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-.goal-info { flex: 1; min-width: 0; }
-.goal-info strong { display: block; font-size: 16px; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.goal-item { background: var(--card-2); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid transparent; }
+.goal-info strong { display: block; font-size: 16px; margin-bottom: 6px; }
 .goal-progress { font-size: 13px; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
 .percent { color: var(--accent); font-weight: 600; }
-
 .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
 
-.add-contrib-form { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
-.add-contrib-form input { width: 100px; padding: 8px 10px; font-size: 14px; }
+/* Блок планов */
+.goal-plans-container { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 4px; }
+.plans-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; }
+.plans-list { display: flex; flex-direction: column; gap: 4px; }
+.plan-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.plan-row:last-child { border-bottom: none; }
+.plan-row span { color: var(--muted); flex: 1; }
+.plan-row b { color: var(--text); margin-right: 12px; }
+
+/* Кнопки действий */
+.goal-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.goal-actions-grid > *:only-child { grid-column: span 2; }
+
+.auto-plan-btn { background: rgba(255, 200, 87, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+.auto-plan-btn:hover { background: rgba(255, 200, 87, 0.25); }
+
+.add-contrib-form { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.add-contrib-form input { flex: 1; padding: 10px 14px; font-size: 14px; }
+.add-contrib-form button { width: 48px; padding: 10px 0; display: flex; justify-content: center; }
 
 /* Утилиты */
 .muted { color: var(--muted); font-size: 14px; text-align: center; padding: 12px; }
@@ -122,99 +119,28 @@ input[type="month"] {
 .app-footer a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all 0.15s; display: inline-block; }
 .app-footer a:hover, .app-footer a.active { color: var(--accent); background: rgba(124,92,255,0.1); }
 
-@media (max-width: 480px) {
-  .goal-item { flex-direction: column; align-items: stretch; gap: 12px; }
-  .add-contrib-form input { width: 100%; }
-  .form-row { flex-direction: column; }
-}
-
-
-
-/* ==========================================================================
-   Экран «Календарь» (v2 — План и Факт)
-   ========================================================================== */
-
-.calendar-nav {
-  display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
-}
-.calendar-nav button {
-  background: var(--card-2); border: 1px solid var(--border); color: var(--text);
-  width: 40px; height: 40px; border-radius: 10px; cursor: pointer; font-size: 20px;
-  line-height: 1; transition: all 0.15s; font-family: inherit;
-}
+/* Календарь (оставляем как было) */
+.calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.calendar-nav button { background: var(--card-2); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; font-size: 20px; line-height: 1; transition: all 0.15s; font-family: inherit; }
 .calendar-nav button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
 .calendar-nav h2 { font-size: 17px; font-weight: 600; text-transform: capitalize; margin: 0; border: none; }
-
 .calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
 .calendar-weekday { text-align: center; font-size: 11px; color: var(--muted); font-weight: 600; padding: 4px 0; }
-
 .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 16px; }
-.calendar-day {
-  aspect-ratio: 1; background: var(--card-2); border: 1px solid transparent; border-radius: 10px;
-  color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 3px; padding: 4px; transition: all 0.15s;
-}
+.calendar-day { aspect-ratio: 1; background: var(--card-2); border: 1px solid transparent; border-radius: 10px; color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; transition: all 0.15s; }
 .calendar-day.other-month { background: transparent; cursor: default; pointer-events: none; }
 .calendar-day:not(.other-month):hover { background: var(--accent); color: #fff; }
 .calendar-day.today { border-color: var(--accent); }
 .calendar-day.selected { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(124, 92, 255, 0.3); }
-
 .calendar-day-num { font-weight: 600; line-height: 1; }
 .calendar-markers { display: flex; gap: 4px; height: 5px; align-items: center; }
-
 .marker { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
-.marker-plan { background: var(--accent); } /* План */
-.marker-fact { background: var(--green); }  /* Факт */
+.marker-plan { background: var(--accent); }
+.marker-fact { background: var(--green); }
 .calendar-day.selected .marker { background: #fff; }
-
-.day-section-title {
-  font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;
-  margin: 12px 0 8px; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 4px;
-}
-
-.event-item {
-  background: var(--card-2); border-radius: 10px; padding: 12px; margin-bottom: 8px;
-  border-left: 3px solid transparent;
-}
+.day-section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 8px; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.event-item { background: var(--card-2); border-radius: 10px; padding: 12px; margin-bottom: 8px; border-left: 3px solid transparent; }
 .event-item.event-plan { border-left-color: var(--accent); }
 .event-item.event-fact { border-left-color: var(--green); }
-
 .event-title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
 .event-meta { font-size: 12px; color: var(--muted); }
-
-/* Кнопки и формы факта */
-.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
-.btn-outline:hover { background: var(--card-2); border-color: var(--accent); }
-
-.inline-fact-form input { width: 100%; padding: 10px; font-size: 14px; }
-
-/* Список планов внутри цели */
-.goal-plans-list {
-  background: var(--bg-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-bottom: 8px;
-}
-
-.plan-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 13px;
-  padding: 4px 0;
-  border-bottom: 1px dashed var(--border);
-}
-.plan-row:last-child { border-bottom: none; }
-.plan-row span { color: var(--muted); }
-.plan-row b { color: var(--text); }
-
-.goal-actions {
-  display: flex;
-  flex-direction: column;
-}
-
-.manual-plan-form input, .add-contrib-form input {
-  width: 100%;
-}
