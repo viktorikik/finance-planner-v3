@@ -24,7 +24,7 @@ export async function renderPlanScreen(container, db) {
       <h2>Создать цель</h2>
       <form id="create-goal-form" class="form-row">
         <input type="text" id="goal-name" placeholder="Название (например, Отпуск)" required>
-        <input type="number" id="goal-target" placeholder="Сумма (₽)" min="1" step="100" required>
+        <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
         <button type="submit" class="btn">Добавить</button>
       </form>
     </section>
@@ -53,7 +53,7 @@ export async function renderPlanScreen(container, db) {
             <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
           </div>
           <form class="add-contrib-form" data-goal-id="${goal.id}">
-            <input type="number" placeholder="Взнос (₽)" min="1" step="100" required class="contrib-amount">
+            <input type="number" placeholder="Взнос (₽)" required class="contrib-amount">
             <button type="submit" class="btn btn-small">+</button>
           </form>
         </div>
@@ -70,7 +70,10 @@ export async function renderPlanScreen(container, db) {
     const name = document.getElementById('goal-name').value;
     const targetRub = parseFloat(document.getElementById('goal-target').value);
     
-    if (!name || isNaN(targetRub) || targetRub <= 0) return;
+    if (!name || isNaN(targetRub) || targetRub <= 0) {
+      alert('Пожалуйста, введите корректное название и сумму больше нуля.');
+      return;
+    }
 
     const cmd = {
       commandId: generateId(),
@@ -106,7 +109,10 @@ export async function renderPlanScreen(container, db) {
       const amountInput = form.querySelector('.contrib-amount');
       const amountRub = parseFloat(amountInput.value);
       
-      if (isNaN(amountRub) || amountRub <= 0) return;
+      if (isNaN(amountRub) || amountRub <= 0) {
+        alert('Пожалуйста, введите сумму больше нуля.');
+        return;
+      }
 
       const cmd = {
         commandId: generateId(),
