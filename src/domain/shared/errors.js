@@ -34,3 +34,9 @@ export class InsufficientFundsError extends DomainError {
     super('INSUFFICIENT_FUNDS', message);
   }
 }
+
+export class DuplicateCommandError extends DomainError {
+  constructor(message = 'Команда с таким ID уже была выполнена') {
+    super('DUPLICATE_COMMAND', message);
+  }
+}
