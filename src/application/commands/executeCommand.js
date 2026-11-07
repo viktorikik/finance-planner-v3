@@ -87,13 +87,13 @@ export async function executeCommand(db, command) {
         plan = planGoalCreate(payload);
         break;
       
-      // ВОТ ОНА, НАША ПРОПАВШАЯ КОМАНДА НАСТРОЕК!
       case 'goal.updateSettings':
         const goalToUpdate = await getFromStore('goals', payload.goalId, tx);
         if (!goalToUpdate) throw new Error('Цель не найдена');
         
         const updatedGoalSettings = {
           ...goalToUpdate,
+          deadlineMonth: payload.deadlineMonth !== undefined ? payload.deadlineMonth : goalToUpdate.deadlineMonth,
           annualRate: payload.annualRate !== undefined ? payload.annualRate : goalToUpdate.annualRate,
           individualInflationRate: payload.individualInflationRate !== undefined ? payload.individualInflationRate : goalToUpdate.individualInflationRate,
           indexationEnabled: payload.indexationEnabled !== undefined ? payload.indexationEnabled : (goalToUpdate.indexationEnabled || false),
