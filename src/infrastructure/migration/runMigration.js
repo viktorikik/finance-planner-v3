@@ -6,8 +6,9 @@ import { migrateV7toV8 } from './migrateV7.js';
 
 export async function runMigrationIfNeeded(db) {
   // Таблицы, которые нужно открыть в транзакции
+  // Убраны plannedIncomeItems и plannedExpenseItems, так как они удалены из новой схемы
   const stores = [
-    'meta', 'goals', 'plannedIncomeItems', 'plannedExpenseItems', 
+    'meta', 'goals', 
     'actualContributions', 'initialContributions', 'moneyLots', 'moneyEntries'
   ];
   
@@ -20,7 +21,6 @@ export async function runMigrationIfNeeded(db) {
   }
 
   // 2. Ищем старые данные в localStorage
-  // Сканируем популярные ключи, чтобы наверняка найти данные
   let oldData = null;
   const possibleKeys = ['financeData', 'finance_planner_data', 'planner_data', 'budget_data', 'data'];
   
@@ -29,7 +29,6 @@ export async function runMigrationIfNeeded(db) {
     if (raw) {
       try {
         const parsed = JSON.parse(raw);
-        // Проверяем, что это действительно старый формат (есть цели или доходы)
         if (parsed.goals || parsed.monthlyIncomes || parsed.shortGoals) {
           oldData = parsed;
           break;
@@ -63,8 +62,6 @@ export async function runMigrationIfNeeded(db) {
     };
 
     await saveItems('goals', plan.goals);
-    await saveItems('plannedIncomeItems', plan.plannedIncomeItems);
-    await saveItems('plannedExpenseItems', plan.plannedExpenseItems);
     await saveItems('actualContributions', plan.actualContributions);
     await saveItems('initialContributions', plan.initialContributions);
     await saveItems('moneyLots', plan.moneyLots);
@@ -85,7 +82,6 @@ export async function runMigrationIfNeeded(db) {
     console.log('[Migration] Миграция успешно завершена!');
   } catch (error) {
     console.error('[Migration] Ошибка миграции:', error);
-    // Транзакция откатится автоматически, флаг не поставится
     throw error;
   }
 }
