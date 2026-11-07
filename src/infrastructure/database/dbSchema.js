@@ -4,7 +4,7 @@
    ========================================================================== */
 
 export const DB_NAME = 'finance-planner-db';
-export const DB_VERSION = 9; // Версия поднята для добавления plannedTransactions
+export const DB_VERSION = 10; // Принудительно поднимаем версию, чтобы пробить кэш
 
 export const STORES = {
   goals: {
