@@ -86,11 +86,14 @@ export function migrateV7toV8(oldData) {
       const contribId = generateId();
       const lotId = generateId();
       
+      // Если есть дата сохранения, берем её, иначе сегодня
+      const savedDate = oldGoal.savedDate ? new Date(oldGoal.savedDate).toISOString() : now;
+      
       plan.initialContributions.push({
         id: contribId,
         location: { type: 'goal', id: goalId },
         amountMinor: savedMinor,
-        actualDate: null,
+        actualDate: oldGoal.savedDate || null,
         registeredAt: now,
         comment: 'Мигрировано из поля saved',
         reversalStatus: 'active',
@@ -102,7 +105,7 @@ export function migrateV7toV8(oldData) {
         sourceType: 'initial',
         sourceRecordId: contribId,
         initialAmountMinor: savedMinor,
-        originDate: null,
+        originDate: oldGoal.savedDate || null,
         createdAt: now
       });
 
@@ -117,9 +120,10 @@ export function migrateV7toV8(oldData) {
         amountMinor: savedMinor,
         sourceRecordType: 'initial',
         sourceRecordId: contribId,
-        effectiveReceivedAt: now,
+        // ИСПРАВЛЕНО: Берем историческую дату, а не now
+        effectiveReceivedAt: savedDate, 
         entryStatus: 'active',
-        actualDate: now.slice(0, 10),
+        actualDate: oldGoal.savedDate || now.slice(0, 10),
         registeredAt: now,
         createdAt: now
       });
@@ -134,6 +138,9 @@ export function migrateV7toV8(oldData) {
         const contribId = generateId();
         const lotId = generateId();
         const type = oldContrib.plannedMonth ? 'planned' : 'additional';
+        
+        // ИСПРАВЛЕНО: Берем историческую дату взноса
+        const contribDate = oldContrib.date ? new Date(oldContrib.date).toISOString() : now;
 
         plan.actualContributions.push({
           id: contribId,
@@ -168,7 +175,8 @@ export function migrateV7toV8(oldData) {
           amountMinor: amountMinor,
           sourceRecordType: 'contribution',
           sourceRecordId: contribId,
-          effectiveReceivedAt: now,
+          // ИСПРАВЛЕНО: Берем историческую дату
+          effectiveReceivedAt: contribDate,
           entryStatus: 'active',
           actualDate: oldContrib.date || now.slice(0, 10),
           registeredAt: now,
