@@ -2,7 +2,7 @@
    Service Worker для планировщика финансов v3.
    ========================================================================== */
 
-const CACHE_VERSION = 'finance-planner-v3-cache-v20'; // <-- ОБНОВЛЕНО
+const CACHE_VERSION = 'finance-planner-v3-cache-v21'; // <-- ОБНОВЛЕНО
 
 const SHELL = [
   './',
