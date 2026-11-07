@@ -1,53 +1,52 @@
-/* ==========================================================================
-   Service Worker для планировщика финансов v3.
-   ========================================================================== */
+const CACHE_VERSION = 'v31';
+const CACHE_NAME = `finance-planner-${CACHE_VERSION}`;
 
-const CACHE_VERSION = 'finance-planner-v3-cache-v29'; // <-- ОБНОВЛЕНО
-
-const SHELL = [
+const APP_SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
+  './icons/icon.svg'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_VERSION)
-      .then(cache => cache.addAll(SHELL))
-      .then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
   );
+  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(
-        keys
-          .filter(key => key !== CACHE_VERSION)
-          .map(key => caches.delete(key))
-      ))
-      .then(() => self.clients.claim())
+    caches.keys().then((cacheNames) => {
+      return Promise.all(
+        cacheNames.map((cacheName) => {
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
+          }
+        })
+      );
+    })
   );
+  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
-  const req = event.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
-  if (url.origin !== self.location.origin) return;
+  if (event.request.method !== 'GET') return;
+  if (!event.request.url.startsWith(self.location.origin)) return;
 
   event.respondWith(
-    caches.match(req).then(cached => {
-      const networkPromise = fetch(req)
-        .then(response => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_VERSION).then(cache => cache.put(req, clone));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || networkPromise;
+    caches.match(event.request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+      return fetch(event.request).then((networkResponse) => {
+        return caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, networkResponse.clone());
+          return networkResponse;
+        });
+      });
+    }).catch(() => {
+      return caches.match('./index.html');
     })
   );
 });
