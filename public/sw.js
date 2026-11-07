@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v31.1';
+const CACHE_VERSION = 'v33';
 const CACHE_NAME = `finance-planner-${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -34,6 +34,28 @@ self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   if (!event.request.url.startsWith(self.location.origin)) return;
 
+  const url = new URL(event.request.url);
+  
+  // Для JS и HTML файлов используем Network-First (сначала сеть, потом кэш).
+  // Это гарантирует, что код обновится на телефоне, даже если кэш застрял.
+  if (url.pathname.endsWith('.js') || url.pathname.endsWith('.html') || url.pathname === '/') {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          return caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, networkResponse.clone());
+            return networkResponse;
+          });
+        })
+        .catch(() => {
+          // Если интернета нет, берем из кэша
+          return caches.match(event.request);
+        })
+    );
+    return;
+  }
+
+  // Для остальных файлов (иконки, манифест) используем Cache-First
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
