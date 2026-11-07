@@ -9,6 +9,7 @@ import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
 import { generatePlanForGoal } from '../../domain/planning/planGenerator.js';
 import { planActualIncomeCreate } from '../../domain/money/actualIncomes.js';
+import { planPlannedTransactionCreate, planPlannedTransactionUpdate } from '../../domain/budget/plannedTransactions.js';
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
 import { calculateGoalBalance } from '../../domain/statistics/balances.js';
 import { calculatePositionBalance } from '../../domain/money/moneyPositions.js';
@@ -50,6 +51,10 @@ export async function executeCommand(db, command) {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes');
   }
 
+  if (commandType.startsWith('plannedTransaction.')) {
+    stores.push('plannedTransactions');
+  }
+
   const tx = db.transaction(stores, 'readwrite');
 
   try {
@@ -58,7 +63,7 @@ export async function executeCommand(db, command) {
 
     let plan = { 
       newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
-      newActualIncomes: [], updatedEntries: [], updatedMovements: [] 
+      newActualIncomes: [], updatedEntries: [], updatedMovements: [], newPlannedTransactions: []
     };
     let state = null;
 
@@ -161,6 +166,25 @@ export async function executeCommand(db, command) {
           req.onerror = () => reject(req.error);
         });
         break;
+
+      case 'plannedTransaction.create':
+        plan = planPlannedTransactionCreate(payload);
+        break;
+      
+      case 'plannedTransaction.update':
+        const existingTx = await getFromStore('plannedTransactions', payload.id, tx);
+        if (!existingTx) throw new Error('Транзакция не найдена');
+        plan = planPlannedTransactionUpdate(payload, existingTx);
+        break;
+      
+      case 'plannedTransaction.delete':
+        await new Promise((resolve, reject) => {
+          const req = tx.objectStore('plannedTransactions').delete(payload.id);
+          req.onsuccess = resolve;
+          req.onerror = () => reject(req.error);
+        });
+        break;
+
       default:
         throw new Error(`Неизвестный тип: ${commandType}`);
     }
@@ -180,6 +204,7 @@ export async function executeCommand(db, command) {
     await saveItems('moneyMovements', plan.updatedMovements);
     await saveItems('goals', plan.newGoals);
     await saveItems('plannedOperations', plan.newPlannedOperations);
+    await saveItems('plannedTransactions', plan.newPlannedTransactions);
 
     await putIntoStore('processedCommands', {
       commandId, commandType, committedAt: new Date().toISOString(), resultHash: 'dummy-hash'
