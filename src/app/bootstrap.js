@@ -1,8 +1,9 @@
 /* ==========================================================================
    Инициализация приложения.
-   Открывает базу данных и передает её в роутер.
+   Открывает базу данных, запускает миграцию и передает db в роутер.
    ========================================================================== */
 import { openDB } from '../infrastructure/database/db.js';
+import { runMigrationIfNeeded } from '../infrastructure/migration/runMigration.js'; // <-- НОВЫЙ ИМПОРТ
 import { initRouter } from './router.js';
 import { registerServiceWorker } from '../pwa/registerServiceWorker.js';
 
@@ -14,10 +15,13 @@ export async function bootstrap() {
     const db = await openDB();
     console.log('[bootstrap] DB ready');
 
-    // 2. Инициализируем роутер, передавая ему db
+    // 2. Запускаем миграцию из старой версии (если нужно)
+    await runMigrationIfNeeded(db);
+
+    // 3. Инициализируем роутер, передавая ему db
     initRouter(db);
 
-    // 3. Регистрируем Service Worker
+    // 4. Регистрируем Service Worker
     await registerServiceWorker();
     
     console.log('[bootstrap] ready');
