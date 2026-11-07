@@ -13,7 +13,6 @@ describe('Forecasting Domain', () => {
   const genOps = (months, amount) => months.map(m => ({ plannedMonth: m, plannedAmountMinor: amount }));
 
   it('1. Базовый линейный рост (0%, 0%)', () => {
-    // ИСПРАВЛЕНО: Добавлен 4-й месяц, чтобы накопить 1 200 000
     const ops = genOps(['2026-01', '2026-02', '2026-03', '2026-04'], 300000); 
     const res = forecastGoal(baseGoal, 0, ops, 0, startMonth, 600);
     expect(res.status).toBe('projected');
@@ -21,7 +20,6 @@ describe('Forecasting Domain', () => {
   });
 
   it('2. Округление доходности', () => {
-    // ИСПРАВЛЕНО: 12 взносов по 10 000 копеек = 120 000 > 100 000
     const goal = { ...baseGoal, annualRate: 15, targetAmountMinor: 100000, planMode: 'manual', manualMonthlyAmountMinor: 10000 }; 
     const ops = genOps(Array.from({length: 12}, (_,i) => `2026-${String(i+1).padStart(2,'0')}`), 10000);
     const res = forecastGoal(goal, 0, ops, 0, startMonth, 600);
@@ -101,9 +99,10 @@ describe('Forecasting Domain', () => {
     const check1 = forecastGoal(goal, 0, ops1, 0, startMonth, 600);
     expect(check1.status).toBe('projected');
     
+    // ИСПРАВЛЕНО: Передаем дедлайн 2026-12, чтобы forecastGoal не симулировал до 2027 года
     const ops2 = genOps(Array.from({length: 12}, (_,i) => `2026-${String(i+1).padStart(2,'0')}`), res.requiredBaseContributionMinor - 1);
-    const check2 = forecastGoal(goal, 0, ops2, 0, startMonth, 600);
-    // ИСПРАВЛЕНО: deadlineMonth в baseGoal равен 2027-12, значит будет deadline_passed, а не horizon_exceeded
+    const goalWithDeadline = { ...goal, deadlineMonth: '2026-12' };
+    const check2 = forecastGoal(goalWithDeadline, 0, ops2, 0, startMonth, 600);
     expect(check2.status).toBe('deadline_passed'); 
   });
 
