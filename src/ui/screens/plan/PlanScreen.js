@@ -1,5 +1,6 @@
 /* ==========================================================================
    Экран «План».
+   Исправлен прогноз для целей без дедлайна (по графику) и верстка кнопок.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -131,30 +132,35 @@ export async function renderPlanScreen(container, db) {
         let reqContrib = null;
         let futureOps = [];
 
-        if (goal.deadlineMonth) {
+        // 1. Если у нас уже есть созданные графики (goalPlans) - используем их напрямую для прогноза
+        if (goalPlans.length > 0) {
+          futureOps = goalPlans.map(op => ({ plannedMonth: op.plannedMonth, plannedAmountMinor: op.plannedAmountMinor }));
+        } 
+        // 2. Иначе, если есть срок и режим auto - генерируем график необходимого взноса
+        else if (goal.deadlineMonth && goal.planMode === 'auto') {
            const req = calculateRequiredContribution(goal, balance, generalInflationSetting, currentMonth, goal.deadlineMonth);
            if (req.status === 'success') {
              reqContrib = req.requiredBaseContributionMinor;
-             if (goal.planMode === 'auto') {
-               futureOps = req.requiredSchedule;
-             }
+             futureOps = req.requiredSchedule;
            }
         }
-
-        if (goal.planMode === 'manual' && goal.manualMonthlyAmountMinor) {
-          if (goal.deadlineMonth) {
+        // 3. Иначе, если ручной режим и задан ручной взнос - генерируем график вручную
+        else if (goal.planMode === 'manual' && goal.manualMonthlyAmountMinor) {
+          // Если есть срок, генерируем до срока. Если нет - генерируем на 120 месяцев (10 лет) для прогноза.
+          const monthsToGenerate = goal.deadlineMonth ? (() => {
             const [sY, sM] = currentMonth.split('-').map(Number);
             const [dY, dM] = goal.deadlineMonth.split('-').map(Number);
-            let months = (dY - sY) * 12 + (dM - sM) + 1;
-            let cy = sY, cm = sM;
-            for (let i = 0; i < months; i++) {
-              let amt = goal.manualMonthlyAmountMinor;
-              if (goal.indexationEnabled) {
-                amt = Math.round(amt * Math.pow(1 + goal.indexationRate / 100, Math.floor(i/12)));
-              }
-              futureOps.push({ plannedMonth: `${cy}-${String(cm).padStart(2, '0')}`, plannedAmountMinor: amt });
-              cm++; if (cm > 12) { cm = 1; cy++; }
+            return Math.max(1, (dY - sY) * 12 + (dM - sM) + 1);
+          })() : 120;
+
+          let [cy, cm] = currentMonth.split('-').map(Number);
+          for (let i = 0; i < monthsToGenerate; i++) {
+            let amt = goal.manualMonthlyAmountMinor;
+            if (goal.indexationEnabled) {
+              amt = Math.round(amt * Math.pow(1 + goal.indexationRate / 100, Math.floor(i/12)));
             }
+            futureOps.push({ plannedMonth: `${cy}-${String(cm).padStart(2, '0')}`, plannedAmountMinor: amt });
+            cm++; if (cm > 12) { cm = 1; cy++; }
           }
         }
 
@@ -173,8 +179,10 @@ export async function renderPlanScreen(container, db) {
             ${goal.planMode === 'manual' && goal.manualMonthlyAmountMinor ? `<div class="forecast-row"><span>Ваш взнос:</span> <b>${formatRub(goal.manualMonthlyAmountMinor)} ₽/мес</b></div>` : ''}
           </div>
         `;
-      } else if (fc.status === 'no_plan' || fc.status === 'insufficient_data') {
-        forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Нет данных для прогноза (укажите срок и режим плана)</div>`;
+      } else if (fc.status === 'no_plan') {
+        forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Нет будущих взносов для расчета прогноза</div>`;
+      } else if (fc.status === 'insufficient_data') {
+        forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Укажите срок и настройки для прогноза</div>`;
       } else if (fc.status === 'deadline_passed') {
         forecastHtml = `<div class="forecast-box" style="color:var(--red); font-size:13px; text-align:center;">Срок прошел, цель не достигнута</div>`;
       }
@@ -222,16 +230,22 @@ export async function renderPlanScreen(container, db) {
 
       html += `
         <div class="goal-item">
-          <div class="goal-header" data-goal-id="${goal.id}">
-            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+          <!-- Шапка с крестиком удаления и галочкой достижения -->
+          <div class="goal-header" style="cursor: default;">
+            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
               <span style="font-size: 14px; flex-shrink: 0;">${goal.category === 'short' ? '⚡' : '🏦'}</span>
               <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${goal.name}</strong>
             </div>
             <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
-              <div class="goal-header-amount ${isAmountHidden ? 'blurred' : ''}">
+              <div class="goal-header-amount ${isAmountHidden ? 'blurred' : ''}" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
                 ${formatRub(balance)} / ${formatRub(target)} ₽
               </div>
-              <span style="color: var(--muted); font-size: 14px;">${isExpanded ? '▲' : '▼'}</span>
+              
+              <div style="display: flex; gap: 4px;">
+                ${percent >= 100 ? `<button class="btn-icon achieve" data-goal-id="${goal.id}" title="Достигнута" style="font-size: 16px; color: var(--green);">✓</button>` : ''}
+                <button class="btn-icon delete" data-goal-id="${goal.id}" title="Удалить" style="font-size: 18px;">×</button>
+                <span style="color: var(--muted); font-size: 14px; cursor: pointer; padding-left:4px;" data-action="toggle-collapse" data-goal-id="${goal.id}">${isExpanded ? '▲' : '▼'}</span>
+              </div>
             </div>
           </div>
 
@@ -271,17 +285,16 @@ export async function renderPlanScreen(container, db) {
               </div>
             ` : ''}
 
-            <div class="goal-actions-grid">
-              <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}">⚙️ Настройки</button>
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
+              <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 40%;">⚙️ Настройки</button>
               
-              <!-- УЛУЧШЕННАЯ КНОПКА АВТОПЛАНА -->
               ${goal.deadlineMonth && balance < target ? `
-                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}">
+                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex: 1 1 50%;">
                   ✨ ${goalPlans.length > 0 ? 'Пересчитать план' : 'Автоплан'}
                 </button>
               ` : ''}
               
-              <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}">+ Свой план</button>
+              <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 100%;">+ Свой план</button>
             </div>
 
             <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
@@ -294,11 +307,6 @@ export async function renderPlanScreen(container, db) {
               <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
               <button type="submit" class="btn btn-small" title="Внести факт">+</button>
             </form>
-          </div>
-
-          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px;">
-            ${percent >= 100 ? `<button class="btn-icon achieve" data-goal-id="${goal.id}" title="Достигнута" style="font-size: 14px; color: var(--green);">Выполнено</button>` : ''}
-            <button class="btn-icon delete" data-goal-id="${goal.id}" title="Удалить" style="font-size: 18px;">×</button>
           </div>
         </div>
       `;
@@ -340,9 +348,9 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  container.querySelectorAll('.goal-header').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const goalId = btn.dataset.goalId;
+  container.querySelectorAll('[data-action="toggle-collapse"]').forEach(el => {
+    el.addEventListener('click', () => {
+      const goalId = el.dataset.goalId;
       if (collapsedGoals.has(goalId)) collapsedGoals.delete(goalId);
       else collapsedGoals.add(goalId);
       renderPlanScreen(container, db);
@@ -459,7 +467,6 @@ export async function renderPlanScreen(container, db) {
       
       if (goalPlans.length > 0) {
         if (!confirm('У вас уже есть план. Заменить его новым автоматическим расчетом?')) return;
-        // Сначала очищаем старый план
         const clearCmd = { commandId: generateId(), commandType: 'plannedOperation.clearForGoal', payload: { goalId }, registeredAt: new Date().toISOString() };
         await executeCommand(db, clearCmd);
       } else {
