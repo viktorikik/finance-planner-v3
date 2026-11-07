@@ -10,12 +10,19 @@ export async function renderBudgetWidget(container, db) {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions'], 'readonly');
-  const goals = await getAllFromStore('goals', tx);
-  const plannedOperations = await getAllFromStore('plannedOperations', tx);
-  const plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+  let budget = { hasData: false, balance: 0, totalIncome: 0, totalExpense: 0, totalContribution: 0 };
 
-  const budget = calculateMonthlyBudget(currentMonth, { goals, plannedOperations, plannedTransactions });
+  try {
+    const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions'], 'readonly');
+    const goals = await getAllFromStore('goals', tx);
+    const plannedOperations = await getAllFromStore('plannedOperations', tx);
+    const plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+
+    budget = calculateMonthlyBudget(currentMonth, { goals, plannedOperations, plannedTransactions });
+  } catch (err) {
+    console.warn('[BudgetWidget] Ошибка загрузки данных бюджета (возможно, БД не обновлена):', err);
+    // Если таблицы нет, budget остается дефолтным (hasData: false)
+  }
 
   if (!budget.hasData) {
     container.innerHTML = `
