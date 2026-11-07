@@ -23,7 +23,7 @@ export function openDB() {
         db.deleteObjectStore('plannedExpenseItems');
       }
 
-      // Проходим по всем актуальным хранилищам
+      // Проходим по всем актуальным хранилищам и создаем недостающие
       for (const [storeName, config] of Object.entries(STORES)) {
         let store;
         
