@@ -1,10 +1,10 @@
 /* ==========================================================================
-   Схема базы данных IndexedDB (модель v8.2).
-   Описывает object stores, их ключи (keyPath) и индексы для быстрого поиска.
+   Схема базы данных IndexedDB (модель v9.0).
+   Добавлена единая таблица plannedTransactions для Бюджета.
    ========================================================================== */
 
 export const DB_NAME = 'finance-planner-db';
-export const DB_VERSION = 8; // Соответствует schemaVersion в модели данных
+export const DB_VERSION = 9; // Версия поднята для добавления plannedTransactions
 
 export const STORES = {
   goals: {
@@ -23,18 +23,13 @@ export const STORES = {
       { name: 'state', keyPath: 'state' }
     ]
   },
-  plannedIncomeItems: {
+  plannedTransactions: {
     keyPath: 'id',
     indexes: [
       { name: 'type', keyPath: 'type' },
-      { name: 'isActive', keyPath: 'isActive' }
-    ]
-  },
-  plannedExpenseItems: {
-    keyPath: 'id',
-    indexes: [
-      { name: 'type', keyPath: 'type' },
-      { name: 'isActive', keyPath: 'isActive' }
+      { name: 'isActive', keyPath: 'isActive' },
+      { name: 'startMonth', keyPath: 'startMonth' },
+      { name: 'frequency', keyPath: 'frequency' }
     ]
   },
   actualIncomes: {
