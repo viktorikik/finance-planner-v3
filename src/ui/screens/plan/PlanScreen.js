@@ -10,7 +10,6 @@ import { generateId } from '../../../domain/shared/ids.js';
 
 const collapsedGoals = new Set();
 let currentFilter = 'all';
-// ЗАЩИТА ДЛЯ ТЕСТОВ: localStorage нет в Node.js
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
 let openSettingsGoalId = null;
 const forecastCache = new Map();
@@ -274,6 +273,14 @@ export async function renderPlanScreen(container, db) {
 
             <div class="goal-actions-grid">
               <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}">⚙️ Настройки</button>
+              
+              <!-- УЛУЧШЕННАЯ КНОПКА АВТОПЛАНА -->
+              ${goal.deadlineMonth && balance < target ? `
+                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}">
+                  ✨ ${goalPlans.length > 0 ? 'Пересчитать план' : 'Автоплан'}
+                </button>
+              ` : ''}
+              
               <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}">+ Свой план</button>
             </div>
 
@@ -440,6 +447,26 @@ export async function renderPlanScreen(container, db) {
       if (!confirm('Удалить ВСЕ плановые взносы для этой цели?')) return;
       const goalId = btn.dataset.goalId;
       const cmd = { commandId: generateId(), commandType: 'plannedOperation.clearForGoal', payload: { goalId }, registeredAt: new Date().toISOString() };
+      try { btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); btn.disabled = false; }
+    });
+  });
+
+  container.querySelectorAll('.auto-plan-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const goalId = btn.dataset.goalId;
+      const goal = activeGoals.find(g => g.id === goalId);
+      const goalPlans = allPlannedOps.filter(op => op.goalId === goalId);
+      
+      if (goalPlans.length > 0) {
+        if (!confirm('У вас уже есть план. Заменить его новым автоматическим расчетом?')) return;
+        // Сначала очищаем старый план
+        const clearCmd = { commandId: generateId(), commandType: 'plannedOperation.clearForGoal', payload: { goalId }, registeredAt: new Date().toISOString() };
+        await executeCommand(db, clearCmd);
+      } else {
+        if (!confirm('Система разделит оставшуюся сумму на равные части до дедлайна. Продолжить?')) return;
+      }
+
+      const cmd = { commandId: generateId(), commandType: 'plannedOperation.generate', payload: { goalId, currentMonth }, registeredAt: new Date().toISOString() };
       try { btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); btn.disabled = false; }
     });
   });
