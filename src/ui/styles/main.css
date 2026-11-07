@@ -32,20 +32,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-#app {
-  max-width: 680px;
-  margin: 0 auto;
-  min-height: calc(100vh - 32px);
-  display: flex;
-  flex-direction: column;
-}
+#app { max-width: 680px; margin: 0 auto; min-height: calc(100vh - 32px); display: flex; flex-direction: column; }
 
 .app-header { text-align: center; margin-bottom: 20px; }
-.app-header h1 {
-  font-size: 26px; font-weight: 700;
-  background: linear-gradient(135deg, #fff 0%, #a89cff 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-}
+.app-header h1 { font-size: 26px; font-weight: 700; background: linear-gradient(135deg, #fff 0%, #a89cff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .app-header .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
 
 .tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
@@ -55,6 +45,9 @@ body {
 
 .screen { flex: 1; display: flex; flex-direction: column; gap: 16px; }
 
+/* Глазик (Скрытие сумм) */
+.blurred { filter: blur(6px); user-select: none; pointer-events: none; transition: filter 0.2s; }
+
 /* Карточки */
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
 .card h2 { font-size: 18px; margin-bottom: 16px; font-weight: 600; }
@@ -62,8 +55,8 @@ body {
 /* Формы */
 .create-goal-form { display: flex; flex-direction: column; gap: 8px; }
 .form-row-bottom { display: flex; gap: 8px; }
+.form-row-bottom select { flex: 1; min-width: 0; }
 .form-row-bottom input { flex: 1; min-width: 0; }
-.form-row-bottom button { flex-shrink: 0; }
 
 input, select {
   background: var(--card-2); border: 1px solid var(--border); border-radius: 10px;
@@ -73,7 +66,7 @@ input, select {
 input:focus { border-color: var(--accent); }
 input::placeholder { color: #5b6175; }
 
-/* ИСПРАВЛЕНИЕ ДЛЯ IOS (чтобы месяц не был невидимым) */
+/* Фикс для iOS месяца */
 input[type="month"] {
   -webkit-appearance: none;
   appearance: none;
@@ -81,9 +74,7 @@ input[type="month"] {
   display: flex;
   align-items: center;
 }
-input[type="month"]::-webkit-datetime-edit {
-  color: var(--text);
-}
+input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 
 .btn { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
 .btn:hover { background: var(--accent-hover); }
@@ -99,22 +90,32 @@ input[type="month"]::-webkit-datetime-edit {
 .btn-icon.achieve { color: var(--green); }
 .btn-icon.achieve:hover { background: rgba(61, 220, 151, 0.1); }
 
+/* Фильтр */
+.filter-tabs {
+  display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 4px;
+}
+.filter-tab {
+  flex: 1; padding: 8px; border: none; background: transparent; color: var(--muted);
+  font-family: inherit; font-weight: 600; font-size: 13px; cursor: pointer; border-radius: 8px;
+  transition: all 0.15s;
+}
+.filter-tab.active { background: var(--border); color: var(--text); }
+
 /* Список целей */
-.goal-item { background: var(--card-2); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 12px; border: 1px solid transparent; }
-.goal-info strong { display: block; font-size: 16px; margin-bottom: 6px; }
-.goal-progress { font-size: 13px; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+.goal-item { background: var(--card-2); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; border: 1px solid transparent; }
+.goal-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.goal-header strong { font-size: 16px; }
+.goal-header-amount { font-size: 13px; font-weight: 600; color: var(--text); }
+
+.goal-body { display: flex; flex-direction: column; }
+.goal-progress { font-size: 13px; color: var(--muted); margin-bottom: 8px; text-align: right; }
 .percent { color: var(--accent); font-weight: 600; }
 .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
 
 /* Блок планов */
-.goal-plans-container { 
-  background: rgba(15, 17, 23, 0.4); /* Полупрозрачный фон вместо черного */
-  border: 1px solid var(--border); 
-  border-radius: 12px; 
-  padding: 12px; 
-  margin-bottom: 4px; 
-}
+.goal-plans-container { background: rgba(15, 17, 23, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 4px; }
 .plans-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; }
 .plans-list { display: flex; flex-direction: column; gap: 4px; }
 .plan-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--border); }
@@ -125,7 +126,6 @@ input[type="month"]::-webkit-datetime-edit {
 /* Кнопки действий */
 .goal-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .goal-actions-grid > *:only-child { grid-column: span 2; }
-
 .auto-plan-btn { background: rgba(255, 200, 87, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
 .auto-plan-btn:hover { background: rgba(255, 200, 87, 0.25); }
 
