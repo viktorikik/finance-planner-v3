@@ -1,6 +1,7 @@
 /* ==========================================================================
    Экран «План».
-   Добавлена SVG-иконка глаза, кнопка удаления, поле даты и раздельное сворачивание.
+   Добавлена SVG-иконка глаза, кнопка удаления, поле даты, раздельное сворачивание
+   и виджет бюджета (Шаг C).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -8,6 +9,7 @@ import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance }
 import { forecastGoal } from '../../../domain/forecasting/goalForecast.js';
 import { calculateRequiredContribution } from '../../../domain/forecasting/calculateRequiredContribution.js';
 import { generateId } from '../../../domain/shared/ids.js';
+import { renderBudgetWidget } from '../../widgets/BudgetWidget.js'; // <-- НОВЫЙ ИМПОРТ
 
 const collapsedGoals = new Set();
 const expandedPlans = new Set(); // Отдельное состояние для списка графиков
@@ -64,6 +66,9 @@ export async function renderPlanScreen(container, db) {
         ${isAmountHidden ? SVG_EYE_CLOSED : SVG_EYE_OPEN}
       </button>
     </div>
+
+    <!-- ВИДЖЕТ БЮДЖЕТА -->
+    <div id="budget-widget-container" style="margin-bottom: 16px;"></div>
 
     <section class="card" style="border-color: var(--border);">
       <h2 style="display: flex; justify-content: space-between; align-items: center;">
@@ -339,6 +344,12 @@ export async function renderPlanScreen(container, db) {
   `;
 
   container.innerHTML = html;
+
+  /* --- ВСТРАИВАЕМ ВИДЖЕТ БЮДЖЕТА --- */
+  const widgetContainer = document.getElementById('budget-widget-container');
+  if (widgetContainer) {
+    await renderBudgetWidget(widgetContainer, db);
+  }
 
   /* --- ОБРАБОТЧИКИ --- */
 
