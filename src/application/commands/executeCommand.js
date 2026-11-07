@@ -8,7 +8,7 @@ import { planMovementReversal } from '../../domain/money/reversals.js';
 import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
 import { generatePlanForGoal } from '../../domain/planning/planGenerator.js';
-import { planActualIncomeCreate } from '../../domain/money/actualIncomes.js'; // <-- НОВЫЙ ИМПОРТ
+import { planActualIncomeCreate } from '../../domain/money/actualIncomes.js';
 import { DuplicateCommandError } from '../../domain/shared/errors.js';
 import { calculateGoalBalance } from '../../domain/statistics/balances.js';
 import { calculatePositionBalance } from '../../domain/money/moneyPositions.js';
@@ -45,7 +45,7 @@ export async function executeCommand(db, command) {
     commandType === 'goal.delete' || 
     commandType === 'goal.achieve' ||
     commandType === 'plannedOperation.generate' ||
-    commandType === 'actualIncome.create' // <-- РАЗРЕШАЕМ ДОСТУП
+    commandType === 'actualIncome.create'
   ) {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes');
   }
@@ -74,7 +74,7 @@ export async function executeCommand(db, command) {
       case 'contribution.create':
         plan = planContribution(payload);
         break;
-      case 'actualIncome.create': // <-- НОВЫЙ CASE
+      case 'actualIncome.create':
         plan = planActualIncomeCreate(payload);
         break;
       case 'money.transfer':
@@ -86,6 +86,25 @@ export async function executeCommand(db, command) {
       case 'goal.create':
         plan = planGoalCreate(payload);
         break;
+      
+      // ВОТ ОНА, НАША ПРОПАВШАЯ КОМАНДА НАСТРОЕК!
+      case 'goal.updateSettings':
+        const goalToUpdate = await getFromStore('goals', payload.goalId, tx);
+        if (!goalToUpdate) throw new Error('Цель не найдена');
+        
+        const updatedGoalSettings = {
+          ...goalToUpdate,
+          annualRate: payload.annualRate !== undefined ? payload.annualRate : goalToUpdate.annualRate,
+          individualInflationRate: payload.individualInflationRate !== undefined ? payload.individualInflationRate : goalToUpdate.individualInflationRate,
+          indexationEnabled: payload.indexationEnabled !== undefined ? payload.indexationEnabled : (goalToUpdate.indexationEnabled || false),
+          indexationRate: payload.indexationRate !== undefined ? payload.indexationRate : (goalToUpdate.indexationRate || 0),
+          planMode: payload.planMode !== undefined ? payload.planMode : (goalToUpdate.planMode || 'auto'),
+          manualMonthlyAmountMinor: payload.manualMonthlyAmountMinor !== undefined ? payload.manualMonthlyAmountMinor : goalToUpdate.manualMonthlyAmountMinor,
+          updatedAt: new Date().toISOString()
+        };
+        plan.newGoals.push(updatedGoalSettings);
+        break;
+
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
         break;
@@ -153,7 +172,7 @@ export async function executeCommand(db, command) {
     };
 
     await saveItems('actualContributions', plan.newContributions);
-    await saveItems('actualIncomes', plan.newActualIncomes); // <-- СОХРАНЯЕМ ДОХОДЫ
+    await saveItems('actualIncomes', plan.newActualIncomes);
     await saveItems('moneyLots', plan.newLots);
     await saveItems('moneyEntries', plan.newEntries);
     await saveItems('moneyMovements', plan.newMovements);
