@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Исправлен прогноз для целей без дедлайна (по графику) и верстка кнопок.
+   Добавлена SVG-иконка глаза, кнопка удаления, поле даты и раздельное сворачивание.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -10,10 +10,14 @@ import { calculateRequiredContribution } from '../../../domain/forecasting/calcu
 import { generateId } from '../../../domain/shared/ids.js';
 
 const collapsedGoals = new Set();
+const expandedPlans = new Set(); // Отдельное состояние для списка графиков
 let currentFilter = 'all';
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
 let openSettingsGoalId = null;
 const forecastCache = new Map();
+
+const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
 export async function renderPlanScreen(container, db) {
   const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings'], 'readonly');
@@ -56,7 +60,9 @@ export async function renderPlanScreen(container, db) {
     <div style="text-align: center; margin-bottom: 20px; position: relative;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
       <div style="font-size: 32px; font-weight: 800; color: var(--green);" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(totalAccumulated)} ₽</div>
-      <button id="toggle-eye" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 24px; cursor: pointer; opacity: 0.7; padding: 8px;">${isAmountHidden ? '🙈' : '👁️'}</button>
+      <button id="toggle-eye" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; opacity: 0.7; padding: 8px; color: var(--text);">
+        ${isAmountHidden ? SVG_EYE_CLOSED : SVG_EYE_OPEN}
+      </button>
     </div>
 
     <section class="card" style="border-color: var(--border);">
@@ -122,31 +128,26 @@ export async function renderPlanScreen(container, db) {
         .sort((a, b) => a.plannedMonth.localeCompare(b.plannedMonth));
 
       const isExpanded = !collapsedGoals.has(goal.id);
-      const visiblePlans = isExpanded ? goalPlans.slice(0, 3) : [];
+      const isPlansExpanded = expandedPlans.has(goal.id);
+      const visiblePlans = isPlansExpanded ? goalPlans : goalPlans.slice(0, 3);
       const isSettingsOpen = openSettingsGoalId === goal.id;
 
       let forecastHtml = '';
-      const cacheKey = `${goal.id}_${balance}_${goal.targetAmountMinor}_${goal.annualRate}_${goal.individualInflationRate}_${goal.indexationEnabled}_${goal.indexationRate}_${goal.planMode}_${goal.manualMonthlyAmountMinor}`;
+      const cacheKey = `${goal.id}_${balance}_${goal.targetAmountMinor}_${goal.annualRate}_${goal.individualInflationRate}_${goal.indexationEnabled}_${goal.indexationRate}_${goal.planMode}_${goal.manualMonthlyAmountMinor}_${goal.deadlineMonth}`;
       
       if (!forecastCache.has(cacheKey)) {
         let reqContrib = null;
         let futureOps = [];
 
-        // 1. Если у нас уже есть созданные графики (goalPlans) - используем их напрямую для прогноза
         if (goalPlans.length > 0) {
           futureOps = goalPlans.map(op => ({ plannedMonth: op.plannedMonth, plannedAmountMinor: op.plannedAmountMinor }));
-        } 
-        // 2. Иначе, если есть срок и режим auto - генерируем график необходимого взноса
-        else if (goal.deadlineMonth && goal.planMode === 'auto') {
+        } else if (goal.deadlineMonth && goal.planMode === 'auto') {
            const req = calculateRequiredContribution(goal, balance, generalInflationSetting, currentMonth, goal.deadlineMonth);
            if (req.status === 'success') {
              reqContrib = req.requiredBaseContributionMinor;
              futureOps = req.requiredSchedule;
            }
-        }
-        // 3. Иначе, если ручной режим и задан ручной взнос - генерируем график вручную
-        else if (goal.planMode === 'manual' && goal.manualMonthlyAmountMinor) {
-          // Если есть срок, генерируем до срока. Если нет - генерируем на 120 месяцев (10 лет) для прогноза.
+        } else if (goal.planMode === 'manual' && goal.manualMonthlyAmountMinor) {
           const monthsToGenerate = goal.deadlineMonth ? (() => {
             const [sY, sM] = currentMonth.split('-').map(Number);
             const [dY, dM] = goal.deadlineMonth.split('-').map(Number);
@@ -192,6 +193,10 @@ export async function renderPlanScreen(container, db) {
         settingsHtml = `
           <form class="goal-settings-form" data-goal-id="${goal.id}">
             <div class="form-group">
+              <label>Срок (дедлайн):</label>
+              <input type="month" name="deadlineMonth" value="${goal.deadlineMonth || ''}">
+            </div>
+            <div class="form-group">
               <label>Ставка доходности (% годовых):</label>
               <input type="number" step="0.1" name="annualRate" value="${goal.annualRate !== null ? goal.annualRate : ''}" placeholder="0">
             </div>
@@ -230,22 +235,16 @@ export async function renderPlanScreen(container, db) {
 
       html += `
         <div class="goal-item">
-          <!-- Шапка с крестиком удаления и галочкой достижения -->
-          <div class="goal-header" style="cursor: default;">
-            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden; cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
+          <div class="goal-header" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
+            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
               <span style="font-size: 14px; flex-shrink: 0;">${goal.category === 'short' ? '⚡' : '🏦'}</span>
               <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${goal.name}</strong>
             </div>
             <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
-              <div class="goal-header-amount ${isAmountHidden ? 'blurred' : ''}" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
+              <div class="goal-header-amount ${isAmountHidden ? 'blurred' : ''}">
                 ${formatRub(balance)} / ${formatRub(target)} ₽
               </div>
-              
-              <div style="display: flex; gap: 4px;">
-                ${percent >= 100 ? `<button class="btn-icon achieve" data-goal-id="${goal.id}" title="Достигнута" style="font-size: 16px; color: var(--green);">✓</button>` : ''}
-                <button class="btn-icon delete" data-goal-id="${goal.id}" title="Удалить" style="font-size: 18px;">×</button>
-                <span style="color: var(--muted); font-size: 14px; cursor: pointer; padding-left:4px;" data-action="toggle-collapse" data-goal-id="${goal.id}">${isExpanded ? '▲' : '▼'}</span>
-              </div>
+              <span style="color: var(--muted); font-size: 14px;">${isExpanded ? '▲' : '▼'}</span>
             </div>
           </div>
 
@@ -279,7 +278,7 @@ export async function renderPlanScreen(container, db) {
                 </div>
                 ${goalPlans.length > 3 ? `
                   <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 4px;">
-                    ${isExpanded ? 'Скрыть лишние' : `Показать все (${goalPlans.length})`}
+                    ${isPlansExpanded ? 'Скрыть лишние' : `Показать все (${goalPlans.length})`}
                   </button>
                 ` : ''}
               </div>
@@ -307,6 +306,11 @@ export async function renderPlanScreen(container, db) {
               <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
               <button type="submit" class="btn btn-small" title="Внести факт">+</button>
             </form>
+
+            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
+              ${percent >= 100 ? `<button class="btn btn-small" data-action="achieve" data-goal-id="${goal.id}" style="background:var(--green); color:#000;">Выполнено</button>` : ''}
+              <button class="btn btn-small btn-outline" data-action="delete" data-goal-id="${goal.id}" style="color: var(--red); border-color: var(--red);">Удалить</button>
+            </div>
           </div>
         </div>
       `;
@@ -315,19 +319,24 @@ export async function renderPlanScreen(container, db) {
 
   html += `</div></section>`;
 
-  if (achievedGoals.length > 0) {
-    html += `
-      <section class="card" style="opacity: 0.7;">
-        <h2>Архив (Достигнутые цели)</h2>
-        ${achievedGoals.map(g => `
-          <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
-            <span><s>${g.name}</s></span>
-            <span style="color: var(--green);" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(g.targetAmountMinor)} ₽</span>
-          </div>
-        `).join('')}
-      </section>
-    `;
-  }
+  // Архив
+  html += `
+    <section class="card" style="opacity: 0.8;">
+      <h2>Архив достижений</h2>
+      ${achievedGoals.length > 0 
+        ? `<p class="muted" style="text-align: left; padding: 0; margin-bottom: 12px; color: var(--green); font-weight: 600;">Вы молодец! Уже достигнуто ${achievedGoals.length} ${achievedGoals.length === 1 ? 'цель' : (achievedGoals.length < 5 ? 'цели' : 'целей')}! Продолжайте в том же духе.</p>
+           <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${achievedGoals.map(g => `
+              <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                <span><s>${g.name}</s></span>
+                <span style="color: var(--green);" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(g.targetAmountMinor)} ₽</span>
+              </div>
+            `).join('')}
+           </div>`
+        : `<p class="muted" style="text-align: left; padding: 0;">Достигнутых целей пока нет, но всё впереди. Работаем над достижением!</p>`
+      }
+    </section>
+  `;
 
   container.innerHTML = html;
 
@@ -375,6 +384,7 @@ export async function renderPlanScreen(container, db) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const goalId = form.dataset.goalId;
+      const deadlineVal = form.querySelector('[name="deadlineMonth"]').value;
       const annualRateVal = form.querySelector('[name="annualRate"]').value;
       const indInflVal = form.querySelector('[name="individualInflationRate"]').value;
       const indEnabled = form.querySelector('[name="indexationEnabled"]').checked;
@@ -384,6 +394,7 @@ export async function renderPlanScreen(container, db) {
 
       const payload = {
         goalId,
+        deadlineMonth: deadlineVal === '' ? null : deadlineVal,
         annualRate: annualRateVal === '' ? null : Number(annualRateVal),
         individualInflationRate: indInflVal === '' ? null : Number(indInflVal),
         indexationEnabled: indEnabled,
@@ -441,11 +452,13 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
+  // Обработчик переключения графика
   container.querySelectorAll('.toggle-more-plans-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Чтобы не сворачивалась карточка
       const goalId = btn.dataset.goalId;
-      if (collapsedGoals.has(goalId)) collapsedGoals.delete(goalId);
-      else collapsedGoals.add(goalId);
+      if (expandedPlans.has(goalId)) expandedPlans.delete(goalId);
+      else expandedPlans.add(goalId);
       renderPlanScreen(container, db);
     });
   });
@@ -479,7 +492,8 @@ export async function renderPlanScreen(container, db) {
   });
 
   container.querySelectorAll('.delete-plan').forEach(btn => {
-    btn.addEventListener('click', async () => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
       if (!confirm('Удалить этот плановый взнос?')) return;
       const cmd = { commandId: generateId(), commandType: 'plannedOperation.delete', payload: { operationId: btn.dataset.opId }, registeredAt: new Date().toISOString() };
       try { await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); }
@@ -521,7 +535,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  container.querySelectorAll('.btn-icon.achieve').forEach(btn => {
+  container.querySelectorAll('[data-action="achieve"]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Цель достигнута! Деньги списываются, цель уходит в архив.')) return;
       const cmd = { commandId: generateId(), commandType: 'goal.achieve', payload: { goalId: btn.dataset.goalId }, registeredAt: new Date().toISOString() };
@@ -529,7 +543,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  container.querySelectorAll('.btn-icon.delete').forEach(btn => {
+  container.querySelectorAll('[data-action="delete"]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const goalId = btn.dataset.goalId;
       const goal = activeGoals.find(g => g.id === goalId);
