@@ -16,10 +16,24 @@ export async function renderBudgetScreen(container, db) {
   async function render() {
     container.innerHTML = '<div class="loading">Загрузка бюджета...</div>';
 
-    const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions'], 'readonly');
-    const goals = await getAllFromStore('goals', tx);
-    const plannedOperations = await getAllFromStore('plannedOperations', tx);
-    const plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+    let goals = [], plannedOperations = [], plannedTransactions = [];
+
+    try {
+      const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions'], 'readonly');
+      goals = await getAllFromStore('goals', tx);
+      plannedOperations = await getAllFromStore('plannedOperations', tx);
+      plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+    } catch (err) {
+      console.warn('[BudgetScreen] Ошибка загрузки (БД не обновлена):', err);
+      container.innerHTML = `
+        <div class="card" style="text-align:center; padding: 40px 20px;">
+          <h2 style="color: var(--red); margin-bottom: 16px;">База данных обновляется</h2>
+          <p class="muted">Пожалуйста, перезагрузите приложение (закройте его полностью и откройте заново), чтобы применились новые таблицы.</p>
+          <button class="btn" onclick="window.location.reload()" style="margin-top: 16px;">Перезагрузить</button>
+        </div>
+      `;
+      return;
+    }
 
     const budget = calculateMonthlyBudget(currentMonth, { goals, plannedOperations, plannedTransactions });
 
