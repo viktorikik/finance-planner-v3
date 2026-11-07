@@ -51,10 +51,14 @@ describe('Domain: monthlyBudget', () => {
   it('должен возвращать hasData: false для месяца без операций', () => {
     const result = calculateMonthlyBudget('2027-01', mockState);
     
-    // В январе регулярный доход есть, поэтому hasData: true
+    // В январе регулярный доход есть (t1), и регулярный расход тоже (t4), поэтому hasData: true
     expect(result.hasData).toBe(true);
-    expect(result.totalIncome).toBe(50000);
-    expect(result.balance).toBe(50000); // только доход, расходов и взносов нет
+    expect(result.totalIncome).toBe(50000); // t1
+    expect(result.totalExpense).toBe(10000); // t4
+    expect(result.totalContribution).toBe(0);
+    
+    // Баланс: 50000 - 10000 = 40000
+    expect(result.balance).toBe(40000);
 
     const emptyState = { goals: [], plannedOperations: [], plannedTransactions: [] };
     const emptyResult = calculateMonthlyBudget('2027-01', emptyState);
