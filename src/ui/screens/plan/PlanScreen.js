@@ -2,6 +2,7 @@
    Экран «План».
    Добавлена SVG-иконка глаза, кнопка удаления, поле даты, раздельное сворачивание
    и виджет бюджета (Шаг C). Исправлены локальные даты, тексты и настройки.
+   Расширена форма создания цели.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -40,7 +41,6 @@ export async function renderPlanScreen(container, db) {
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
   
-  // ИСПОЛЬЗУЕМ ЛОКАЛЬНОЕ ВРЕМЯ ВМЕСТО UTC
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -109,6 +109,32 @@ export async function renderPlanScreen(container, db) {
           </select>
           <input type="month" id="goal-deadline" required value="${now.getFullYear() + 1}-12">
         </div>
+        
+        <button type="button" class="btn-text" id="toggle-advanced-create" style="text-align: left; padding: 8px 0; color: var(--accent);">⚙️ Дополнительные настройки</button>
+        
+        <div id="advanced-create-fields" style="display: none; flex-direction: column; gap: 8px; background: var(--card-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border);">
+          <div class="form-group">
+            <label>Начать копить с:</label>
+            <input type="month" id="goal-startMonth" value="${currentMonth}">
+          </div>
+          <div class="form-group">
+            <label>Ставка доходности (% годовых):</label>
+            <input type="number" step="0.1" id="goal-annualRate" placeholder="0">
+          </div>
+          <div class="form-group">
+            <label>Индивидуальная инфляция (% годовых):</label>
+            <input type="number" step="0.1" id="goal-inflation" placeholder="Общая">
+          </div>
+          <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 4px;">
+            <input type="checkbox" id="goal-indexationEnabled" style="width: auto;">
+            <label for="goal-indexationEnabled" style="margin:0;">Индексировать взнос ежегодно</label>
+          </div>
+          <div class="form-group" id="goal-indexationRateGroup" style="display: none; margin-top: 4px;">
+            <label>Ставка индексации (%):</label>
+            <input type="number" step="0.1" id="goal-indexationRate" value="0">
+          </div>
+        </div>
+
         <button type="submit" class="btn">Создать цель</button>
       </form>
     </section>
@@ -140,7 +166,6 @@ export async function renderPlanScreen(container, db) {
       const visiblePlans = isPlansExpanded ? goalPlans : goalPlans.slice(0, 3);
       const isSettingsOpen = openSettingsGoalId === goal.id;
 
-      // Определяем месяц старта для расчетов (если startMonth в будущем, берем его, иначе текущий)
       const calcStartMonth = (goal.startMonth && goal.startMonth > currentMonth) ? goal.startMonth : currentMonth;
 
       let forecastHtml = '';
@@ -389,6 +414,24 @@ export async function renderPlanScreen(container, db) {
     renderPlanScreen(container, db);
   });
 
+  // Обработчик для дополнительных настроек при СОЗДАНИИ
+  const toggleAdvBtn = document.getElementById('toggle-advanced-create');
+  const advFields = document.getElementById('advanced-create-fields');
+  const createIndexationCheckbox = document.getElementById('goal-indexationEnabled');
+  const createIndexationRateGroup = document.getElementById('goal-indexationRateGroup');
+
+  if (toggleAdvBtn && advFields) {
+    toggleAdvBtn.addEventListener('click', () => {
+      advFields.style.display = advFields.style.display === 'none' ? 'flex' : 'none';
+    });
+  }
+
+  if (createIndexationCheckbox && createIndexationRateGroup) {
+    createIndexationCheckbox.addEventListener('change', (e) => {
+      createIndexationRateGroup.style.display = e.target.checked ? 'flex' : 'none';
+    });
+  }
+
   container.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       currentFilter = btn.dataset.filter;
@@ -474,23 +517,42 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
+  // Обработчик создания цели (расширенный)
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
     const targetRub = parseFloat(document.getElementById('goal-target').value);
     const category = document.getElementById('goal-category').value;
     const deadlineMonth = document.getElementById('goal-deadline').value || null;
+    
+    // Дополнительные поля
+    const startMonth = document.getElementById('goal-startMonth').value || currentMonth;
+    const annualRateVal = document.getElementById('goal-annualRate').value;
+    const inflationVal = document.getElementById('goal-inflation').value;
+    const indexationEnabled = document.getElementById('goal-indexationEnabled').checked;
+    const indexationRateVal = document.getElementById('goal-indexationRate').value || '0';
+
     if (!name || isNaN(targetRub) || targetRub <= 0) return;
 
     const cmd = {
       commandId: generateId(), commandType: 'goal.create',
-      payload: { name, category, targetAmountMinor: Math.round(targetRub * 100), deadlineMonth, startMonth: currentMonth },
+      payload: { 
+        name, 
+        category, 
+        targetAmountMinor: Math.round(targetRub * 100), 
+        deadlineMonth,
+        startMonth,
+        annualRate: annualRateVal === '' ? null : Number(annualRateVal),
+        individualInflationRate: inflationVal === '' ? null : Number(inflationVal),
+        indexationEnabled,
+        indexationRate: Number(indexationRateVal)
+      },
       registeredAt: new Date().toISOString()
     };
     try {
-      const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = '...';
+      const btn = e.target.querySelector('button[type="submit"]'); btn.disabled = true; btn.textContent = '...';
       await executeCommand(db, cmd); await renderPlanScreen(container, db);
-    } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
+    } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button[type="submit"]').disabled = false; }
   });
 
   container.querySelectorAll('.toggle-more-plans-btn').forEach(btn => {
