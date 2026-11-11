@@ -9,7 +9,6 @@ import { generateId } from '../../../domain/shared/ids.js';
 
 const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-/* ---------- Утилиты дат ---------- */
 function getTodayString() {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -53,7 +52,6 @@ function escapeHtml(str) {
   }[c]));
 }
 
-/* ---------- Статусы ---------- */
 function getStatusLabel(status) {
   const map = {
     notDue: { text: 'Предстоит', color: 'var(--muted)' },
@@ -65,7 +63,6 @@ function getStatusLabel(status) {
   return map[status] || { text: status, color: 'var(--text)' };
 }
 
-/* ---------- Главный вход ---------- */
 export async function renderCalendarScreen(container, db) {
   const state = {
     currentMonth: getCurrentMonthString(),
@@ -73,27 +70,29 @@ export async function renderCalendarScreen(container, db) {
     goals: [],
     plannedOps: [],
     actualContribs: [],
-    plannedTransactions: [], // Заменяем старые incomes/expenses
-    actualIncomes: []
+    plannedTransactions: [],
+    actualTransactions: [], // Новое
+    actualIncomes: [] // Старое
   };
 
   let activeFormId = null;
 
   async function loadData() {
-    const stores = ['goals', 'plannedOperations', 'actualContributions', 'plannedTransactions', 'actualIncomes'];
+    const stores = ['goals', 'plannedOperations', 'actualContributions', 'plannedTransactions', 'actualTransactions', 'actualIncomes'];
     const tx = db.transaction(stores, 'readonly');
     
     state.goals = await getAllFromStore('goals', tx);
     state.plannedOps = await getAllFromStore('plannedOperations', tx);
     state.actualContribs = await getAllFromStore('actualContributions', tx);
     state.plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+    state.actualTransactions = await getAllFromStore('actualTransactions', tx);
     state.actualIncomes = await getAllFromStore('actualIncomes', tx);
   }
 
   function buildEventsMap() {
     const map = new Map();
     const ensure = (date) => {
-      if (!map.has(date)) map.set(date, { planOps: [], factContribs: [], planIncomes: [], planExpenses: [], factIncomes: [] });
+      if (!map.has(date)) map.set(date, { planOps: [], factContribs: [], planIncomes: [], planExpenses: [], factIncomes: [], factExpenses: [] });
       return map.get(date);
     };
 
@@ -118,14 +117,11 @@ export async function renderCalendarScreen(container, db) {
       if (tx.isActive === false) continue;
 
       let dateStr = null;
-
       if (tx.frequency === 'one-time') {
         if (tx.date) dateStr = tx.date;
       } else if (tx.frequency === 'regular') {
-        // Проверяем, попадает ли текущий просматриваемый месяц в период действия
         if (state.currentMonth >= tx.startMonth && (!tx.endMonth || state.currentMonth <= tx.endMonth)) {
           if (tx.dayOfMonth) {
-            // Защита от несуществующих дат (например, 31 февраля)
             const day = Math.min(tx.dayOfMonth, daysInMonth);
             dateStr = `${state.currentMonth}-${String(day).padStart(2, '0')}`;
           }
@@ -133,15 +129,20 @@ export async function renderCalendarScreen(container, db) {
       }
 
       if (dateStr) {
-        if (tx.type === 'income') {
-          ensure(dateStr).planIncomes.push(tx);
-        } else {
-          ensure(dateStr).planExpenses.push(tx);
-        }
+        if (tx.type === 'income') ensure(dateStr).planIncomes.push(tx);
+        else ensure(dateStr).planExpenses.push(tx);
       }
     }
 
-    // 4. Факт: Доходы (из старой таблицы, если есть)
+    // 4. Факт: Доходы и Расходы (Бюджет)
+    for (const tx of state.actualTransactions) {
+      if (tx.actualDate) {
+        if (tx.type === 'income') ensure(tx.actualDate).factIncomes.push(tx);
+        else ensure(tx.actualDate).factExpenses.push(tx);
+      }
+    }
+
+    // 5. Факт: Доходы (из старой таблицы)
     for (const inc of state.actualIncomes) {
       if (inc.actualDate) ensure(inc.actualDate).factIncomes.push(inc);
     }
@@ -159,9 +160,7 @@ export async function renderCalendarScreen(container, db) {
 
     let html = '<div class="calendar-weekdays">';
     for (const wd of WEEKDAY_LABELS) html += `<div class="calendar-weekday">${wd}</div>`;
-    html += '</div>';
-
-    html += '<div class="calendar-grid">';
+    html += '</div><div class="calendar-grid">';
 
     for (let i = 0; i < totalCells; i++) {
       const dayNum = i - leading + 1;
@@ -175,7 +174,7 @@ export async function renderCalendarScreen(container, db) {
       const ev = eventsByDate.get(dateStr);
       
       const hasPlan = ev && (ev.planOps.length > 0 || ev.planIncomes.length > 0 || ev.planExpenses.length > 0);
-      const hasFact = ev && (ev.factContribs.length > 0 || ev.factIncomes.length > 0);
+      const hasFact = ev && (ev.factContribs.length > 0 || ev.factIncomes.length > 0 || ev.factExpenses.length > 0);
 
       const cls = ['calendar-day'];
       if (dateStr === today) cls.push('today');
@@ -205,7 +204,7 @@ export async function renderCalendarScreen(container, db) {
     const ev = eventsByDate.get(state.selectedDate);
     const goalsMap = new Map(state.goals.map(g => [g.id, g]));
 
-    if (!ev || (!ev.planOps.length && !ev.factContribs.length && !ev.planIncomes.length && !ev.planExpenses.length && !ev.factIncomes.length)) {
+    if (!ev || (!ev.planOps.length && !ev.factContribs.length && !ev.planIncomes.length && !ev.planExpenses.length && !ev.factIncomes.length && !ev.factExpenses.length)) {
       return `<p class="muted">${formatDateLong(state.selectedDate)}: событий нет.</p>`;
     }
 
@@ -215,7 +214,6 @@ export async function renderCalendarScreen(container, db) {
     if (ev.planOps.length || ev.planIncomes.length || ev.planExpenses.length) {
       html += '<div class="day-section-title">План</div>';
       
-      // Плановые взносы в цели
       for (const op of ev.planOps) {
         const goal = goalsMap.get(op.goalId);
         const { status, actualAmountMinor } = calculateExecutionStatus(op, state.actualContribs);
@@ -237,32 +235,29 @@ export async function renderCalendarScreen(container, db) {
         `;
       }
 
-      // Плановые доходы
       for (const inc of ev.planIncomes) {
         html += `
           <div class="event-item event-plan" style="border-left-color: var(--green);">
             <div class="event-title" style="color: var(--green);">+ ${escapeHtml(inc.title)}</div>
-            <div class="event-meta">${formatRub(inc.amountMinor)} ₽ (Доход)</div>
+            <div class="event-meta">План: ${formatRub(inc.amountMinor)} ₽ (Доход)</div>
           </div>
         `;
       }
 
-      // Плановые расходы
       for (const exp of ev.planExpenses) {
         html += `
           <div class="event-item event-plan" style="border-left-color: var(--red);">
             <div class="event-title" style="color: var(--red);">- ${escapeHtml(exp.title)}</div>
-            <div class="event-meta">${formatRub(exp.amountMinor)} ₽ (Расход)</div>
+            <div class="event-meta">План: ${formatRub(exp.amountMinor)} ₽ (Расход)</div>
           </div>
         `;
       }
     }
 
     /* --- БЛОК ФАКТА --- */
-    if (ev.factContribs.length || ev.factIncomes.length) {
+    if (ev.factContribs.length || ev.factIncomes.length || ev.factExpenses.length) {
       html += '<div class="day-section-title" style="margin-top:16px;">Факт</div>';
       
-      // Фактические взносы
       for (const c of ev.factContribs) {
         const goal = goalsMap.get(c.goalId);
         const typeLabel = c.type === 'planned' ? 'По плану' : c.type === 'early' ? 'Досрочно' : 'Дополнительный';
@@ -274,9 +269,22 @@ export async function renderCalendarScreen(container, db) {
         `;
       }
 
-      // Фактические доходы
       for (const inc of ev.factIncomes) {
-        html += `<div class="event-item event-fact"><div class="event-title">Доход</div><div class="event-meta">${formatRub(inc.amountMinor)} ₽</div></div>`;
+        html += `
+          <div class="event-item event-fact" style="border-left-color: var(--green);">
+            <div class="event-title" style="color: var(--green);">+ ${escapeHtml(inc.title || 'Доход')}</div>
+            <div class="event-meta">${formatRub(inc.amountMinor)} ₽ (Факт)</div>
+          </div>
+        `;
+      }
+
+      for (const exp of ev.factExpenses) {
+        html += `
+          <div class="event-item event-fact" style="border-left-color: var(--red);">
+            <div class="event-title" style="color: var(--red);">- ${escapeHtml(exp.title || 'Расход')}</div>
+            <div class="event-meta">${formatRub(exp.amountMinor)} ₽ (Факт)</div>
+          </div>
+        `;
       }
     }
 
@@ -323,7 +331,6 @@ export async function renderCalendarScreen(container, db) {
       </section>
     `;
 
-    // Обработчики навигации
     container.querySelector('#cal-prev').addEventListener('click', () => {
       state.currentMonth = shiftMonth(state.currentMonth, -1);
       state.selectedDate = null;
@@ -338,7 +345,6 @@ export async function renderCalendarScreen(container, db) {
       render();
     });
 
-    // Обработчик выбора дня
     container.querySelectorAll('.calendar-day[data-date]').forEach(btn => {
       btn.addEventListener('click', () => {
         state.selectedDate = btn.dataset.date;
@@ -347,7 +353,6 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Кнопка "Добавить факт"
     container.querySelectorAll('[data-action="register-fact"]').forEach(btn => {
       btn.addEventListener('click', () => {
         activeFormId = btn.dataset.opId;
@@ -359,7 +364,6 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Кнопка "Отмена" в форме
     container.querySelectorAll('[data-action="cancel-fact"]').forEach(btn => {
       btn.addEventListener('click', () => {
         activeFormId = null;
@@ -367,7 +371,6 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Отправка формы факта
     container.querySelectorAll('form[id^="fact-form-"]').forEach(form => {
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
