@@ -6,7 +6,6 @@ import { executeCommand } from '../../../application/commands/executeCommand.js'
 import { calculateMonthlyBudget } from '../../../domain/budget/monthlyBudget.js';
 import { generateId } from '../../../domain/shared/ids.js';
 
-// Хелпер для форматирования денег
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 export async function renderBudgetScreen(container, db) {
@@ -24,24 +23,22 @@ export async function renderBudgetScreen(container, db) {
       plannedOperations = await getAllFromStore('plannedOperations', tx);
       plannedTransactions = await getAllFromStore('plannedTransactions', tx);
     } catch (err) {
-      console.warn('[BudgetScreen] Ошибка загрузки (БД не обновлена):', err);
-      container.innerHTML = `
-        <div class="card" style="text-align:center; padding: 40px 20px;">
-          <h2 style="color: var(--red); margin-bottom: 16px;">База данных обновляется</h2>
-          <p class="muted">Пожалуйста, перезагрузите приложение (закройте его полностью и откройте заново), чтобы применились новые таблицы.</p>
-          <button class="btn" onclick="window.location.reload()" style="margin-top: 16px;">Перезагрузить</button>
-        </div>
-      `;
+      console.warn('[BudgetScreen] Ошибка загрузки:', err);
+      container.innerHTML = `<div class="card"><p class="muted">Ошибка загрузки базы данных. Обновите страницу.</p></div>`;
       return;
     }
 
     const budget = calculateMonthlyBudget(currentMonth, { goals, plannedOperations, plannedTransactions });
 
-    // HTML для экрана
     container.innerHTML = `
+      <div style="display:flex; align-items:center; margin-bottom: 16px; gap: 12px;">
+        <button class="btn-icon" onclick="window.location.hash='/plan'" style="font-size: 24px; color: var(--text);">←</button>
+        <h2 style="margin: 0; font-size: 20px;">Бюджет</h2>
+      </div>
+
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-          <h2>Бюджет на месяц</h2>
+          <h2>Месяц</h2>
           <input type="month" id="budget-month-picker" value="${currentMonth}" style="width:auto; padding:8px; font-size:14px;">
         </div>
 
@@ -65,15 +62,14 @@ export async function renderBudgetScreen(container, db) {
 
       <div class="card">
         <h2>Список операций</h2>
-        ${renderTransactionsList(budget.incomes, 'Доходы', 'income')}
-        ${renderTransactionsList(budget.expenses, 'Расходы', 'expense')}
-        ${(!budget.incomes.length && !budget.expenses.length) ? '<p class="muted">Нет запланированных доходов или расходов на этот месяц.</p>' : ''}
+        ${renderTransactionsList(budget.incomes, budget.inactiveIncomes, 'Доходы', 'income')}
+        ${renderTransactionsList(budget.expenses, budget.inactiveExpenses, 'Расходы', 'expense')}
+        ${(!budget.incomes.length && !budget.expenses.length && !budget.inactiveIncomes.length && !budget.inactiveExpenses.length) ? '<p class="muted">Нет запланированных доходов или расходов на этот месяц.</p>' : ''}
       </div>
 
       <div id="tx-form-container"></div>
     `;
 
-    // Обработчики
     document.getElementById('budget-month-picker').addEventListener('change', (e) => {
       currentMonth = e.target.value;
       render();
@@ -82,10 +78,10 @@ export async function renderBudgetScreen(container, db) {
     document.getElementById('btn-add-income').addEventListener('click', () => showForm('income'));
     document.getElementById('btn-add-expense').addEventListener('click', () => showForm('expense'));
 
-    // Обработчики для кнопок удаления/отключения
+    // Обработчик удаления
     container.querySelectorAll('[data-action="delete"]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('Удалить эту операцию?')) return;
+        if (!confirm('Удалить эту операцию полностью?')) return;
         await executeCommand(db, {
           commandId: generateId(),
           commandType: 'plannedTransaction.delete',
@@ -95,6 +91,7 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
+    // Обработчик отключения/включения
     container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
@@ -107,54 +104,79 @@ export async function renderBudgetScreen(container, db) {
         render();
       });
     });
+
+    // Обработчик редактирования
+    container.querySelectorAll('[data-action="edit"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const txId = btn.dataset.id;
+        const allTxs = [...budget.incomes, ...budget.expenses, ...budget.inactiveIncomes, ...budget.inactiveExpenses];
+        const tx = allTxs.find(t => t.id === txId);
+        if (tx) showForm(tx.type, tx);
+      });
+    });
   }
 
-  function renderTransactionsList(items, title, type) {
-    if (!items.length) return '';
+  function renderTransactionsList(activeItems, inactiveItems, title, type) {
+    const allItems = [...activeItems, ...inactiveItems];
+    if (!allItems.length) return '';
+    
     return `
       <div style="margin-bottom: 16px;">
         <h3 style="font-size:14px; color:var(--muted); margin-bottom:8px;">${title}</h3>
-        ${items.map(tx => `
-          <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}">
+        ${allItems.map(tx => {
+          const isInactive = tx.isActive === false;
+          return `
+          <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'};">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
-                <div class="event-title">${tx.title}</div>
+                <div class="event-title" style="${isInactive ? 'text-decoration: line-through;' : ''}">${tx.title}</div>
                 <div class="event-meta">
                   ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'}
                 </div>
               </div>
-              <div style="display:flex; gap:8px;">
-                <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive}" title="${tx.isActive ? 'Отключить' : 'Включить'}">
-                  ${tx.isActive ? '👁️' : '🙈'}
+              <div style="display:flex; gap:8px; align-items: center;">
+                <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted);">
+                  ✏️
+                </button>
+                <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}">
+                  ${tx.isActive !== false ? '👁️' : '🙈'}
                 </button>
                 <button class="btn-icon delete" data-action="delete" data-id="${tx.id}">✕</button>
               </div>
             </div>
           </div>
-        `).join('')}
+        `}).join('')}
       </div>
     `;
   }
 
-  function showForm(type) {
+  function showForm(type, existingTx = null) {
     const formContainer = document.getElementById('tx-form-container');
     const isIncome = type === 'income';
+    
+    // Если редактируем, подставляем текущие значения
+    const titleVal = existingTx ? existingTx.title : '';
+    const amountVal = existingTx ? existingTx.amountMinor / 100 : '';
+    const freqVal = existingTx ? existingTx.frequency : 'regular';
+    const startMonthVal = existingTx ? existingTx.startMonth : currentMonth;
+    const endMonthVal = existingTx && existingTx.endMonth ? existingTx.endMonth : '';
+
     formContainer.innerHTML = `
       <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}">
-        <h2>Добавить ${isIncome ? 'доход' : 'расход'}</h2>
+        <h2>${existingTx ? 'Редактировать' : 'Добавить'} ${isIncome ? 'доход' : 'расход'}</h2>
         <form id="tx-form" class="create-goal-form">
-          <input type="text" id="tx-title" placeholder="Название (например, Зарплата или Аренда)" required>
-          <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" required min="1">
+          <input type="text" id="tx-title" placeholder="Название" value="${titleVal}" required>
+          <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" value="${amountVal}" required min="1" step="0.01">
           
           <div class="form-row-bottom">
             <select id="tx-frequency">
-              <option value="regular">Регулярный (каждый месяц)</option>
-              <option value="one-time">Разовый (только один месяц)</option>
+              <option value="regular" ${freqVal === 'regular' ? 'selected' : ''}>Регулярный (каждый месяц)</option>
+              <option value="one-time" ${freqVal === 'one-time' ? 'selected' : ''}>Разовый (только один месяц)</option>
             </select>
-            <input type="month" id="tx-start-month" value="${currentMonth}" required>
+            <input type="month" id="tx-start-month" value="${startMonthVal}" required>
           </div>
           
-          <input type="month" id="tx-end-month" style="display:none;" placeholder="Месяц окончания (необязательно)">
+          <input type="month" id="tx-end-month" value="${endMonthVal}" style="display:${freqVal === 'regular' ? 'block' : 'none'};" placeholder="Месяц окончания (необязательно)">
 
           <button type="submit" class="btn" style="margin-top:8px;">Сохранить</button>
           <button type="button" class="btn btn-outline" id="btn-cancel" style="margin-top:8px;">Отмена</button>
@@ -180,11 +202,19 @@ export async function renderBudgetScreen(container, db) {
       const endMonth = frequency === 'regular' ? endMonthInput.value || null : null;
 
       try {
-        await executeCommand(db, {
-          commandId: generateId(),
-          commandType: 'plannedTransaction.create',
-          payload: { type, title, amountMinor, frequency, startMonth, endMonth }
-        });
+        if (existingTx) {
+          await executeCommand(db, {
+            commandId: generateId(),
+            commandType: 'plannedTransaction.update',
+            payload: { id: existingTx.id, title, amountMinor, frequency, startMonth, endMonth }
+          });
+        } else {
+          await executeCommand(db, {
+            commandId: generateId(),
+            commandType: 'plannedTransaction.create',
+            payload: { type, title, amountMinor, frequency, startMonth, endMonth }
+          });
+        }
         formContainer.innerHTML = '';
         render();
       } catch (err) {
