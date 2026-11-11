@@ -1,10 +1,10 @@
 /* ==========================================================================
-   Схема базы данных IndexedDB (модель v9.0, версия 11).
-   Принудительный инкремент до 11, чтобы пробить "застрявшую" версию 10.
+   Схема базы данных IndexedDB (модель v12.0).
+   Добавлена таблица actualTransactions для учета факта в бюджете.
    ========================================================================== */
 
 export const DB_NAME = 'finance-planner-db';
-export const DB_VERSION = 11; // <--- ИЗМЕНЕНО НА 11
+export const DB_VERSION = 12; // Версия поднята для добавления actualTransactions
 
 export const STORES = {
   goals: {
@@ -30,6 +30,14 @@ export const STORES = {
       { name: 'isActive', keyPath: 'isActive' },
       { name: 'startMonth', keyPath: 'startMonth' },
       { name: 'frequency', keyPath: 'frequency' }
+    ]
+  },
+  actualTransactions: {
+    keyPath: 'id',
+    indexes: [
+      { name: 'type', keyPath: 'type' },
+      { name: 'actualDate', keyPath: 'actualDate' },
+      { name: 'plannedTransactionId', keyPath: 'plannedTransactionId' }
     ]
   },
   actualIncomes: {
