@@ -1,11 +1,11 @@
 /* ==========================================================================
-   Экран «Бюджет». Управление доходами и расходами + Годовой прогноз.
-   Исправлена таблица годового прогноза (заголовки, сетка, итоги).
+   Экран «Бюджет». Управление доходами, расходами и фактом + Годовой прогноз.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
 import { calculateMonthlyBudget } from '../../../domain/budget/monthlyBudget.js';
 import { calculateYearlyBudget } from '../../../domain/budget/yearlyBudget.js';
+import { calculateBudgetExecution } from '../../../domain/budget/budgetExecution.js';
 import { generateId } from '../../../domain/shared/ids.js';
 
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -18,27 +18,29 @@ export async function renderBudgetScreen(container, db) {
   async function render() {
     container.innerHTML = '<div class="loading">Загрузка бюджета...</div>';
 
-    let goals = [], plannedOperations = [], plannedTransactions = [];
+    let goals = [], plannedOperations = [], plannedTransactions = [], actualTransactions = [];
 
     try {
-      const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions'], 'readonly');
+      const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions'], 'readonly');
       goals = await getAllFromStore('goals', tx);
       plannedOperations = await getAllFromStore('plannedOperations', tx);
       plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+      actualTransactions = await getAllFromStore('actualTransactions', tx);
     } catch (err) {
       console.warn('[BudgetScreen] Ошибка загрузки:', err);
       container.innerHTML = `<div class="card"><p class="muted">Ошибка загрузки базы данных. Обновите страницу.</p></div>`;
       return;
     }
 
-    const state = { goals, plannedOperations, plannedTransactions };
-    const budget = calculateMonthlyBudget(currentMonth, state);
+    const state = { goals, plannedOperations, plannedTransactions, actualTransactions };
+    const execution = calculateBudgetExecution(currentMonth, state);
+    const { plan, factIncomes, factExpenses, totalFactIncome, totalFactExpense, incomeVariance, expenseVariance } = execution;
 
+    // Годовой прогноз
     let yearlyHtml = '';
     if (isYearlyViewVisible) {
       const yearlyData = calculateYearlyBudget(currentMonth, state);
 
-      // Итоги за год
       const yearTotals = yearlyData.reduce((acc, item) => {
         acc.income += item.totalIncome;
         acc.expense += item.totalExpense;
@@ -49,10 +51,8 @@ export async function renderBudgetScreen(container, db) {
 
       yearlyHtml = `
         <div class="card" style="margin-top: 16px; background: rgba(124,92,255,0.05); border-color: var(--accent);">
-          <h2 style="color: var(--accent); margin-bottom: 4px;">Прогноз на 12 месяцев</h2>
-          <p style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">
-            Нажмите на строку месяца, чтобы открыть детали.
-          </p>
+          <h2 style="color: var(--accent); margin-bottom: 4px;">Прогноз на 12 месяцев (План)</h2>
+          <p style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Нажмите на строку месяца, чтобы открыть детали.</p>
 
           <div class="yearly-table">
             <div class="yearly-header">
@@ -89,15 +89,40 @@ export async function renderBudgetScreen(container, db) {
               </span>
             </div>
           </div>
-
-          <div class="yearly-legend">
-            <span><span style="color:var(--green);">●</span> Доходы</span>
-            <span><span style="color:var(--red);">●</span> Расходы (вкл. взносы)</span>
-            <span><span style="color:var(--red); background: rgba(255,92,124,0.15); padding: 1px 6px; border-radius: 4px;">●</span> Дефицит</span>
-          </div>
         </div>
       `;
     }
+
+    // Отрисовка сводки План vs Факт
+    const factBalance = totalFactIncome - totalFactExpense;
+    const isFactNegative = factBalance < 0;
+    
+    let summaryHtml = `
+      <div class="budget-summary" style="background:var(--card-2); padding:16px; border-radius:12px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:4px;">
+          <span>Категория</span>
+          <span>План / <b>Факт</b></span>
+        </div>
+        <div class="summary-row">
+          <span class="muted">Доходы:</span> 
+          <span>+${formatMoney(plan.totalIncome)} / <b style="color:var(--green)">+${formatMoney(totalFactIncome)}</b></span>
+        </div>
+        <div class="summary-row">
+          <span class="muted">Расходы:</span> 
+          <span>-${formatMoney(plan.totalExpense)} / <b style="color:var(--red)">-${formatMoney(totalFactExpense)}</b></span>
+        </div>
+        <div class="summary-row">
+          <span class="muted">Взносы в цели:</span> 
+          <span>-${formatMoney(plan.totalContribution)}</span>
+        </div>
+        <div class="summary-row" style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-weight:bold;">
+          <span>Фактический остаток:</span> 
+          <span style="color: ${isFactNegative ? 'var(--red)' : 'var(--green)'}">
+            ${formatMoney(factBalance)} ₽
+          </span>
+        </div>
+      </div>
+    `;
 
     container.innerHTML = `
       <div style="display:flex; align-items:center; margin-bottom: 16px; gap: 12px;">
@@ -111,21 +136,15 @@ export async function renderBudgetScreen(container, db) {
           <input type="month" id="budget-month-picker" value="${currentMonth}" style="width:auto; padding:8px; font-size:14px;">
         </div>
 
-        <div class="budget-summary" style="background:var(--card-2); padding:16px; border-radius:12px; margin-bottom:16px;">
-          <div class="summary-row"><span class="muted">Доходы:</span> <span style="color:var(--green)">+${formatMoney(budget.totalIncome)} ₽</span></div>
-          <div class="summary-row"><span class="muted">Расходы:</span> <span style="color:var(--red)">-${formatMoney(budget.totalExpense)} ₽</span></div>
-          <div class="summary-row"><span class="muted">Взносы в цели:</span> <span style="color:var(--yellow)">-${formatMoney(budget.totalContribution)} ₽</span></div>
-          <div class="summary-row" style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-weight:bold;">
-            <span>Остаток:</span> 
-            <span style="color: ${budget.balance < 0 ? 'var(--red)' : 'var(--green)'}">
-              ${formatMoney(budget.balance)} ₽
-            </span>
-          </div>
-        </div>
+        ${summaryHtml}
 
         <div class="actions-row" style="margin-bottom: 8px;">
-          <button class="btn btn-outline" id="btn-add-income">+ Доход</button>
-          <button class="btn btn-outline" id="btn-add-expense">+ Расход</button>
+          <button class="btn btn-outline" id="btn-add-income">+ План доход</button>
+          <button class="btn btn-outline" id="btn-add-expense">+ План расход</button>
+        </div>
+        <div class="actions-row" style="margin-bottom: 8px;">
+          <button class="btn" id="btn-add-fact-income" style="background:var(--green); color:#000;">+ Факт доход</button>
+          <button class="btn" id="btn-add-fact-expense" style="background:var(--red);">+ Факт расход</button>
         </div>
         
         <button class="btn btn-text" id="btn-toggle-yearly" style="width: 100%; margin-top: 8px; border: 1px dashed var(--border); padding: 10px;">
@@ -136,15 +155,21 @@ export async function renderBudgetScreen(container, db) {
       ${yearlyHtml}
 
       <div class="card">
-        <h2>Список операций (Текущий месяц)</h2>
-        ${renderTransactionsList(budget.incomes, budget.inactiveIncomes, 'Доходы', 'income')}
-        ${renderTransactionsList(budget.expenses, budget.inactiveExpenses, 'Расходы', 'expense')}
-        ${(!budget.incomes.length && !budget.expenses.length && !budget.inactiveIncomes.length && !budget.inactiveExpenses.length) ? '<p class="muted">Нет запланированных доходов или расходов на этот месяц.</p>' : ''}
+        <h2>Плановые операции</h2>
+        ${renderTransactionsList(plan.incomes, plan.inactiveIncomes, 'План: Доходы', 'income', factIncomes)}
+        ${renderTransactionsList(plan.expenses, plan.inactiveExpenses, 'План: Расходы', 'expense', factExpenses)}
+        ${(!plan.incomes.length && !plan.expenses.length) ? '<p class="muted">Нет плановых операций.</p>' : ''}
+      </div>
+
+      <div class="card">
+        <h2>Фактические операции (без плана)</h2>
+        ${renderStandaloneFacts(factIncomes, factExpenses)}
       </div>
 
       <div id="tx-form-container"></div>
     `;
 
+    // Обработчики навигации и кнопок
     document.getElementById('budget-month-picker').addEventListener('change', (e) => {
       currentMonth = e.target.value;
       render();
@@ -163,21 +188,35 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
-    document.getElementById('btn-add-income').addEventListener('click', () => showForm('income'));
-    document.getElementById('btn-add-expense').addEventListener('click', () => showForm('expense'));
+    document.getElementById('btn-add-income').addEventListener('click', () => showPlannedForm('income'));
+    document.getElementById('btn-add-expense').addEventListener('click', () => showPlannedForm('expense'));
+    document.getElementById('btn-add-fact-income').addEventListener('click', () => showFactForm('income'));
+    document.getElementById('btn-add-fact-expense').addEventListener('click', () => showFactForm('expense'));
 
-    container.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    // Кнопки "Внести факт по плану"
+    container.querySelectorAll('[data-action="add-fact-to-plan"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const planId = btn.dataset.planId;
+        const allPlans = [...plan.incomes, ...plan.expenses];
+        const plannedTx = allPlans.find(t => t.id === planId);
+        if (plannedTx) showFactForm(plannedTx.type, plannedTx);
+      });
+    });
+
+    // Удаление факта
+    container.querySelectorAll('[data-action="delete-fact"]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        if (!confirm('Удалить эту операцию полностью?')) return;
+        if (!confirm('Удалить эту фактическую операцию?')) return;
         await executeCommand(db, {
           commandId: generateId(),
-          commandType: 'plannedTransaction.delete',
+          commandType: 'actualTransaction.delete',
           payload: { id: btn.dataset.id }
         });
         render();
       });
     });
 
+    // Отключение/включение плана
     container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
@@ -191,17 +230,18 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
+    // Редактирование плана
     container.querySelectorAll('[data-action="edit"]').forEach(btn => {
       btn.addEventListener('click', () => {
         const txId = btn.dataset.id;
-        const allTxs = [...budget.incomes, ...budget.expenses, ...budget.inactiveIncomes, ...budget.inactiveExpenses];
+        const allTxs = [...plan.incomes, ...plan.expenses, ...plan.inactiveIncomes, ...plan.inactiveExpenses];
         const tx = allTxs.find(t => t.id === txId);
-        if (tx) showForm(tx.type, tx);
+        if (tx) showPlannedForm(tx.type, tx);
       });
     });
   }
 
-  function renderTransactionsList(activeItems, inactiveItems, title, type) {
+  function renderTransactionsList(activeItems, inactiveItems, title, type, allFactItems) {
     const allItems = [...activeItems, ...inactiveItems];
     if (!allItems.length) return '';
     
@@ -211,32 +251,72 @@ export async function renderBudgetScreen(container, db) {
         ${allItems.map(tx => {
           const isInactive = tx.isActive === false;
           const dateInfo = tx.dayOfMonth ? `${tx.dayOfMonth}-е число` : (tx.date ? new Date(tx.date).toLocaleDateString('ru-RU') : 'Без даты');
+          
+          // Находим связанные факты
+          const linkedFacts = allFactItems.filter(f => f.plannedTransactionId === tx.id);
+          const totalLinkedFact = linkedFacts.reduce((sum, f) => sum + f.amountMinor, 0);
+          
           return `
-          <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'};">
+          <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'}; margin-bottom: 12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
                 <div class="event-title" style="${isInactive ? 'text-decoration: line-through;' : ''}">${tx.title}</div>
                 <div class="event-meta">
-                  ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'} • ${dateInfo}
+                  План: ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'} • ${dateInfo}
+                </div>
+                ${linkedFacts.length > 0 ? `<div class="event-meta" style="color:var(--green)">Внесено факт: ${formatMoney(totalLinkedFact)} ₽</div>` : ''}
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px; align-items: flex-end;">
+                <button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>
+                <div style="display:flex; gap:8px; align-items: center;">
+                  <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); font-size: 16px;">✏️</button>
+                  <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="font-size: 16px;">
+                    ${tx.isActive !== false ? '👁️' : '🙈'}
+                  </button>
                 </div>
               </div>
-              <div style="display:flex; gap:8px; align-items: center;">
-                <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted);">
-                  ✏️
-                </button>
-                <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}">
-                  ${tx.isActive !== false ? '👁️' : '🙈'}
-                </button>
-                <button class="btn-icon delete" data-action="delete" data-id="${tx.id}">✕</button>
-              </div>
             </div>
+            
+            ${linkedFacts.length > 0 ? `
+              <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
+                ${linkedFacts.map(f => `
+                  <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom: 4px;">
+                    <span>Факт: ${new Date(f.actualDate).toLocaleDateString('ru-RU')}</span>
+                    <span style="display:flex; gap:8px; align-items:center;">
+                      <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
+                      <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}" style="font-size: 12px;">✕</button>
+                    </span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
           </div>
         `}).join('')}
       </div>
     `;
   }
 
-  function showForm(type, existingTx = null) {
+  function renderStandaloneFacts(factsIn, factsEx) {
+    const standalone = [...factsIn, ...factsEx].filter(f => !f.plannedTransactionId);
+    if (!standalone.length) return '<p class="muted">Нет внеплановых фактов.</p>';
+
+    return standalone.map(f => `
+      <div class="event-item" style="border-left-color: ${f.type === 'income' ? 'var(--green)' : 'var(--red)'}; margin-bottom: 8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div class="event-title">${f.title}</div>
+            <div class="event-meta">${new Date(f.actualDate).toLocaleDateString('ru-RU')}</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <b style="color:${f.type === 'income' ? 'var(--green)' : 'var(--red)'}">${formatMoney(f.amountMinor)} ₽</b>
+            <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}">✕</button>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function showPlannedForm(type, existingTx = null) {
     const formContainer = document.getElementById('tx-form-container');
     const isIncome = type === 'income';
     
@@ -250,7 +330,7 @@ export async function renderBudgetScreen(container, db) {
 
     formContainer.innerHTML = `
       <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}">
-        <h2>${existingTx ? 'Редактировать' : 'Добавить'} ${isIncome ? 'доход' : 'расход'}</h2>
+        <h2>${existingTx ? 'Редактировать план' : 'Добавить план'}: ${isIncome ? 'Доход' : 'Расход'}</h2>
         <form id="tx-form" class="create-goal-form">
           <input type="text" id="tx-title" placeholder="Название" value="${titleVal}" required>
           <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" value="${amountVal}" required min="1" step="0.01">
@@ -328,6 +408,58 @@ export async function renderBudgetScreen(container, db) {
             payload: { type, title, amountMinor, frequency, startMonth, endMonth, dayOfMonth, date }
           });
         }
+        formContainer.innerHTML = '';
+        render();
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      }
+    });
+  }
+
+  function showFactForm(type, plannedTx = null) {
+    const formContainer = document.getElementById('tx-form-container');
+    const isIncome = type === 'income';
+    const today = new Date().toISOString().slice(0, 10);
+
+    const titleVal = plannedTx ? plannedTx.title : '';
+    const amountVal = plannedTx ? plannedTx.amountMinor / 100 : '';
+
+    formContainer.innerHTML = `
+      <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}; box-shadow: 0 0 20px ${isIncome ? 'rgba(61,220,151,0.2)' : 'rgba(255,92,124,0.2)'};">
+        <h2>Внести факт: ${isIncome ? 'Доход' : 'Расход'}</h2>
+        <form id="fact-form" class="create-goal-form">
+          <input type="text" id="fact-title" placeholder="Название" value="${titleVal}" required>
+          <input type="number" id="fact-amount" placeholder="Фактическая сумма (₽)" value="${amountVal}" required min="1" step="0.01">
+          <div class="form-group">
+            <label>Дата фактической операции:</label>
+            <input type="date" id="fact-date" value="${today}" required>
+          </div>
+          <button type="submit" class="btn" style="margin-top:8px;">Сохранить факт</button>
+          <button type="button" class="btn btn-outline" id="btn-cancel-fact" style="margin-top:8px;">Отмена</button>
+        </form>
+      </div>
+    `;
+
+    document.getElementById('btn-cancel-fact').addEventListener('click', () => formContainer.innerHTML = '');
+
+    document.getElementById('fact-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('fact-title').value;
+      const amountMinor = Math.round(parseFloat(document.getElementById('fact-amount').value) * 100);
+      const actualDate = document.getElementById('fact-date').value;
+
+      try {
+        await executeCommand(db, {
+          commandId: generateId(),
+          commandType: 'actualTransaction.create',
+          payload: { 
+            type, 
+            title, 
+            amountMinor, 
+            actualDate,
+            plannedTransactionId: plannedTx ? plannedTx.id : null
+          }
+        });
         formContainer.innerHTML = '';
         render();
       } catch (err) {
