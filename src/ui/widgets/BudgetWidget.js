@@ -2,7 +2,7 @@
    Виджет бюджета для встраивания на экран «План».
    ========================================================================== */
 import { getAllFromStore } from '../../infrastructure/database/transaction.js';
-import { calculateMonthlyBudget } from '../../domain/budget/monthlyBudget.js';
+import { calculateBudgetExecution } from '../../domain/budget/budgetExecution.js';
 
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 
@@ -10,21 +10,23 @@ export async function renderBudgetWidget(container, db) {
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  let budget = { hasData: false, balance: 0, totalIncome: 0, totalExpense: 0, totalContribution: 0 };
+  let execution = { plan: { hasData: false }, totalFactIncome: 0, totalFactExpense: 0 };
 
   try {
-    const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions'], 'readonly');
+    const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions'], 'readonly');
     const goals = await getAllFromStore('goals', tx);
     const plannedOperations = await getAllFromStore('plannedOperations', tx);
     const plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+    const actualTransactions = await getAllFromStore('actualTransactions', tx);
 
-    budget = calculateMonthlyBudget(currentMonth, { goals, plannedOperations, plannedTransactions });
+    execution = calculateBudgetExecution(currentMonth, { goals, plannedOperations, plannedTransactions, actualTransactions });
   } catch (err) {
-    console.warn('[BudgetWidget] Ошибка загрузки данных бюджета (возможно, БД не обновлена):', err);
-    // Если таблицы нет, budget остается дефолтным (hasData: false)
+    console.warn('[BudgetWidget] Ошибка загрузки данных бюджета:', err);
   }
 
-  if (!budget.hasData) {
+  const { plan, totalFactIncome, totalFactExpense } = execution;
+
+  if (!plan.hasData && totalFactIncome === 0 && totalFactExpense === 0) {
     container.innerHTML = `
       <div class="card" style="padding: 16px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="window.location.hash='/budget'">
         <div>
@@ -37,24 +39,31 @@ export async function renderBudgetWidget(container, db) {
     return;
   }
 
-  const isNegative = budget.balance < 0;
+  // Если есть факты, показываем реальный остаток. Иначе - плановый.
+  const hasFacts = totalFactIncome > 0 || totalFactExpense > 0;
+  const balance = hasFacts ? (totalFactIncome - totalFactExpense) : plan.balance;
+  const isNegative = balance < 0;
   const balanceColor = isNegative ? 'var(--red)' : 'var(--green)';
-  const balanceText = isNegative ? 'Дефицит бюджета' : 'В бюджете';
+  
+  const label = hasFacts ? 'Факт. остаток' : 'План. остаток';
+  const incomeVal = hasFacts ? totalFactIncome : plan.totalIncome;
+  const expenseVal = hasFacts ? totalFactExpense : (plan.totalExpense + plan.totalContribution);
+  const subLabel = hasFacts ? 'Факт' : 'План';
 
   container.innerHTML = `
     <div class="card" style="padding: 16px; cursor:pointer;" onclick="window.location.hash='/budget'">
       <div style="display:flex; justify-content:space-between; align-items:flex-start;">
         <div>
-          <div style="font-weight:600; font-size:14px; color:var(--text); margin-bottom:4px;">Бюджет на месяц</div>
+          <div style="font-weight:600; font-size:14px; color:var(--text); margin-bottom:4px;">Бюджет на месяц (${subLabel})</div>
           <div style="font-size:12px; color:var(--muted);">
-            Доходы: +${formatMoney(budget.totalIncome)} • Расходы: -${formatMoney(budget.totalExpense + budget.totalContribution)}
+            Доходы: +${formatMoney(incomeVal)} • Расходы: -${formatMoney(expenseVal)}
           </div>
         </div>
         <div style="text-align:right;">
           <div style="font-weight:700; font-size:18px; color:${balanceColor};">
-            ${formatMoney(budget.balance)} ₽
+            ${formatMoney(balance)} ₽
           </div>
-          <div style="font-size:11px; color:${balanceColor};">${balanceText}</div>
+          <div style="font-size:11px; color:${balanceColor};">${label}</div>
         </div>
       </div>
     </div>
