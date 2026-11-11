@@ -17,13 +17,24 @@ function isTransactionActiveInMonth(tx, month) {
   }
   
   if (tx.frequency === 'regular') {
-    // startMonth <= month
     if (tx.startMonth > month) return false;
-    // если есть endMonth, проверяем, что month <= endMonth
     if (tx.endMonth && month > tx.endMonth) return false;
     return true;
   }
   
+  return false;
+}
+
+/**
+ * Проверяет, попадает ли транзакция в указанный месяц (включая отключенные).
+ */
+function isTransactionInMonth(tx, month) {
+  if (tx.frequency === 'one-time') return tx.startMonth === month;
+  if (tx.frequency === 'regular') {
+    if (tx.startMonth > month) return false;
+    if (tx.endMonth && month > tx.endMonth) return false;
+    return true;
+  }
   return false;
 }
 
@@ -40,16 +51,23 @@ export function calculateMonthlyBudget(month, state) {
   const activeGoals = goals.filter(g => g.status === 'active');
   const activeGoalIds = new Set(activeGoals.map(g => g.id));
 
-  // 2. Считаем плановые доходы и расходы
-  const relevantTransactions = plannedTransactions.filter(tx => isTransactionActiveInMonth(tx, month));
+  // 2. Отбираем транзакции для этого месяца (включая отключенные)
+  const allMonthTransactions = plannedTransactions.filter(tx => isTransactionInMonth(tx, month));
+  
+  // 3. Считаем только активные транзакции
+  const activeTransactions = allMonthTransactions.filter(tx => tx.isActive !== false);
 
-  const incomes = relevantTransactions.filter(tx => tx.type === 'income');
-  const expenses = relevantTransactions.filter(tx => tx.type === 'expense');
+  const incomes = activeTransactions.filter(tx => tx.type === 'income');
+  const expenses = activeTransactions.filter(tx => tx.type === 'expense');
+  
+  // Для UI также возвращаем неактивные, чтобы их можно было включить обратно
+  const inactiveIncomes = allMonthTransactions.filter(tx => tx.type === 'income' && tx.isActive === false);
+  const inactiveExpenses = allMonthTransactions.filter(tx => tx.type === 'expense' && tx.isActive === false);
 
   const totalIncome = incomes.reduce((sum, tx) => sum + tx.amountMinor, 0);
   const totalExpense = expenses.reduce((sum, tx) => sum + tx.amountMinor, 0);
 
-  // 3. Считаем плановые взносы по целям (на основе plannedOperations)
+  // 4. Считаем плановые взносы по целям
   const relevantOperations = plannedOperations.filter(op => 
     op.plannedMonth === month && 
     activeGoalIds.has(op.goalId)
@@ -57,17 +75,17 @@ export function calculateMonthlyBudget(month, state) {
 
   const totalContribution = relevantOperations.reduce((sum, op) => sum + op.plannedAmountMinor, 0);
 
-  // 4. Итоговый баланс
-  // Баланс = Доходы - Расходы - Взносы в цели
+  // 5. Итоговый баланс
   const balance = totalIncome - totalExpense - totalContribution;
 
-  // 5. Есть ли вообще данные для этого месяца?
-  // Если нет ни доходов, ни расходов, ни взносов — значит данных нет
-  const hasData = relevantTransactions.length > 0 || relevantOperations.length > 0;
+  // 6. Есть ли вообще данные
+  const hasData = allMonthTransactions.length > 0 || relevantOperations.length > 0;
 
   return {
     incomes,
     expenses,
+    inactiveIncomes,
+    inactiveExpenses,
     contributions: relevantOperations,
     totalIncome,
     totalExpense,
