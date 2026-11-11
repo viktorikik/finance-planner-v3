@@ -98,6 +98,7 @@ export async function executeCommand(db, command) {
         
         const updatedGoalSettings = {
           ...goalToUpdate,
+          startMonth: payload.startMonth !== undefined ? payload.startMonth : goalToUpdate.startMonth,
           deadlineMonth: payload.deadlineMonth !== undefined ? payload.deadlineMonth : goalToUpdate.deadlineMonth,
           annualRate: payload.annualRate !== undefined ? payload.annualRate : goalToUpdate.annualRate,
           individualInflationRate: payload.individualInflationRate !== undefined ? payload.individualInflationRate : goalToUpdate.individualInflationRate,
@@ -120,7 +121,6 @@ export async function executeCommand(db, command) {
         const allEntries = await getAllFromStore('moneyEntries', tx);
         const currentBalance = calculateGoalBalance(goalForGen.id, allEntries);
         
-        // Получаем настройки инфляции
         const settingsReq = tx.objectStore('settings').get('generalInflationRate');
         const generalInflationSetting = await new Promise((resolve) => {
            settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : null);
