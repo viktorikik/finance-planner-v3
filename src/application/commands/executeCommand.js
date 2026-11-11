@@ -48,7 +48,7 @@ export async function executeCommand(db, command) {
     commandType === 'plannedOperation.generate' ||
     commandType === 'actualIncome.create'
   ) {
-    stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes');
+    stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes', 'settings');
   }
 
   if (commandType.startsWith('plannedTransaction.')) {
@@ -113,13 +113,23 @@ export async function executeCommand(db, command) {
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
         break;
+
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
         if (!goalForGen) throw new Error('Цель не найдена');
         const allEntries = await getAllFromStore('moneyEntries', tx);
         const currentBalance = calculateGoalBalance(goalForGen.id, allEntries);
-        plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth);
+        
+        // Получаем настройки инфляции
+        const settingsReq = tx.objectStore('settings').get('generalInflationRate');
+        const generalInflationSetting = await new Promise((resolve) => {
+           settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : null);
+           settingsReq.onerror = () => resolve(null);
+        });
+
+        plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth, generalInflationSetting);
         break;
+
       case 'plannedOperation.delete':
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('plannedOperations').delete(payload.operationId);
