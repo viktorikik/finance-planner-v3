@@ -1,5 +1,6 @@
 /* ==========================================================================
    Экран «Бюджет». Управление доходами и расходами.
+   Добавлены поля для привязки к календарю (dayOfMonth / date).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -78,7 +79,6 @@ export async function renderBudgetScreen(container, db) {
     document.getElementById('btn-add-income').addEventListener('click', () => showForm('income'));
     document.getElementById('btn-add-expense').addEventListener('click', () => showForm('expense'));
 
-    // Обработчик удаления
     container.querySelectorAll('[data-action="delete"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Удалить эту операцию полностью?')) return;
@@ -91,7 +91,6 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
-    // Обработчик отключения/включения
     container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.dataset.id;
@@ -105,7 +104,6 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
-    // Обработчик редактирования
     container.querySelectorAll('[data-action="edit"]').forEach(btn => {
       btn.addEventListener('click', () => {
         const txId = btn.dataset.id;
@@ -125,13 +123,14 @@ export async function renderBudgetScreen(container, db) {
         <h3 style="font-size:14px; color:var(--muted); margin-bottom:8px;">${title}</h3>
         ${allItems.map(tx => {
           const isInactive = tx.isActive === false;
+          const dateInfo = tx.dayOfMonth ? `${tx.dayOfMonth}-е число` : (tx.date ? new Date(tx.date).toLocaleDateString('ru-RU') : 'Без даты');
           return `
           <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'};">
             <div style="display:flex; justify-content:space-between; align-items:center;">
               <div>
                 <div class="event-title" style="${isInactive ? 'text-decoration: line-through;' : ''}">${tx.title}</div>
                 <div class="event-meta">
-                  ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'}
+                  ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'} • ${dateInfo}
                 </div>
               </div>
               <div style="display:flex; gap:8px; align-items: center;">
@@ -154,12 +153,13 @@ export async function renderBudgetScreen(container, db) {
     const formContainer = document.getElementById('tx-form-container');
     const isIncome = type === 'income';
     
-    // Если редактируем, подставляем текущие значения
     const titleVal = existingTx ? existingTx.title : '';
     const amountVal = existingTx ? existingTx.amountMinor / 100 : '';
     const freqVal = existingTx ? existingTx.frequency : 'regular';
     const startMonthVal = existingTx ? existingTx.startMonth : currentMonth;
     const endMonthVal = existingTx && existingTx.endMonth ? existingTx.endMonth : '';
+    const dayOfMonthVal = existingTx && existingTx.dayOfMonth ? existingTx.dayOfMonth : '';
+    const dateVal = existingTx && existingTx.date ? existingTx.date : '';
 
     formContainer.innerHTML = `
       <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}">
@@ -170,13 +170,29 @@ export async function renderBudgetScreen(container, db) {
           
           <div class="form-row-bottom">
             <select id="tx-frequency">
-              <option value="regular" ${freqVal === 'regular' ? 'selected' : ''}>Регулярный (каждый месяц)</option>
-              <option value="one-time" ${freqVal === 'one-time' ? 'selected' : ''}>Разовый (только один месяц)</option>
+              <option value="regular" ${freqVal === 'regular' ? 'selected' : ''}>Регулярный</option>
+              <option value="one-time" ${freqVal === 'one-time' ? 'selected' : ''}>Разовый</option>
             </select>
             <input type="month" id="tx-start-month" value="${startMonthVal}" required>
           </div>
-          
-          <input type="month" id="tx-end-month" value="${endMonthVal}" style="display:${freqVal === 'regular' ? 'block' : 'none'};" placeholder="Месяц окончания (необязательно)">
+
+          <div id="regular-fields" style="display: ${freqVal === 'regular' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
+             <div class="form-group">
+                <label>День месяца (для календаря, 1-31):</label>
+                <input type="number" id="tx-day-of-month" value="${dayOfMonthVal}" placeholder="Например, 5" min="1" max="31">
+             </div>
+             <div class="form-group">
+                <label>Месяц окончания (необязательно):</label>
+                <input type="month" id="tx-end-month" value="${endMonthVal}">
+             </div>
+          </div>
+
+          <div id="one-time-fields" style="display: ${freqVal === 'one-time' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
+             <div class="form-group">
+                <label>Конкретная дата (для календаря):</label>
+                <input type="date" id="tx-date" value="${dateVal}">
+             </div>
+          </div>
 
           <button type="submit" class="btn" style="margin-top:8px;">Сохранить</button>
           <button type="button" class="btn btn-outline" id="btn-cancel" style="margin-top:8px;">Отмена</button>
@@ -185,10 +201,13 @@ export async function renderBudgetScreen(container, db) {
     `;
 
     const freqSelect = document.getElementById('tx-frequency');
-    const endMonthInput = document.getElementById('tx-end-month');
+    const regFields = document.getElementById('regular-fields');
+    const oneTimeFields = document.getElementById('one-time-fields');
     
     freqSelect.addEventListener('change', (e) => {
-      endMonthInput.style.display = e.target.value === 'regular' ? 'block' : 'none';
+      const isReg = e.target.value === 'regular';
+      regFields.style.display = isReg ? 'flex' : 'none';
+      oneTimeFields.style.display = isReg ? 'none' : 'flex';
     });
 
     document.getElementById('btn-cancel').addEventListener('click', () => formContainer.innerHTML = '');
@@ -199,20 +218,27 @@ export async function renderBudgetScreen(container, db) {
       const amountMinor = Math.round(parseFloat(document.getElementById('tx-amount').value) * 100);
       const frequency = freqSelect.value;
       const startMonth = document.getElementById('tx-start-month').value;
-      const endMonth = frequency === 'regular' ? endMonthInput.value || null : null;
+      
+      const dayOfMonthVal = document.getElementById('tx-day-of-month').value;
+      const endMonthVal = document.getElementById('tx-end-month').value;
+      const dateVal = document.getElementById('tx-date').value;
+
+      const dayOfMonth = frequency === 'regular' && dayOfMonthVal ? parseInt(dayOfMonthVal, 10) : null;
+      const endMonth = frequency === 'regular' ? endMonthVal || null : null;
+      const date = frequency === 'one-time' ? dateVal || null : null;
 
       try {
         if (existingTx) {
           await executeCommand(db, {
             commandId: generateId(),
             commandType: 'plannedTransaction.update',
-            payload: { id: existingTx.id, title, amountMinor, frequency, startMonth, endMonth }
+            payload: { id: existingTx.id, title, amountMinor, frequency, startMonth, endMonth, dayOfMonth, date }
           });
         } else {
           await executeCommand(db, {
             commandId: generateId(),
             commandType: 'plannedTransaction.create',
-            payload: { type, title, amountMinor, frequency, startMonth, endMonth }
+            payload: { type, title, amountMinor, frequency, startMonth, endMonth, dayOfMonth, date }
           });
         }
         formContainer.innerHTML = '';
