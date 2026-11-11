@@ -1,7 +1,6 @@
 /* ==========================================================================
    Экран «Календарь».
-   Показывает плановые и фактические события.
-   Позволяет регистрировать фактические взносы по плановым операциям.
+   Показывает плановые и фактические события, включая доходы и расходы из бюджета.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -74,41 +73,21 @@ export async function renderCalendarScreen(container, db) {
     goals: [],
     plannedOps: [],
     actualContribs: [],
-    // Будущие таблицы (пока пустые)
-    plannedIncomes: [],
-    plannedExpenses: [],
+    plannedTransactions: [], // Заменяем старые incomes/expenses
     actualIncomes: []
   };
 
-  let activeFormId = null; // ID плановой операции, для которой открыта форма факта
+  let activeFormId = null;
 
   async function loadData() {
-    // Пытаемся загрузить всё, что есть
-    const stores = ['goals', 'plannedOperations', 'actualContributions'];
-    
-    // Динамически проверяем наличие таблиц бюджета (чтобы не упасть, если их нет в транзакции)
-    try {
-      const checkTx = db.transaction(['plannedIncomeItems'], 'readonly');
-      stores.push('plannedIncomeItems');
-    } catch(e) {}
-    try {
-      const checkTx = db.transaction(['plannedExpenseItems'], 'readonly');
-      stores.push('plannedExpenseItems');
-    } catch(e) {}
-    try {
-      const checkTx = db.transaction(['actualIncomes'], 'readonly');
-      stores.push('actualIncomes');
-    } catch(e) {}
-
+    const stores = ['goals', 'plannedOperations', 'actualContributions', 'plannedTransactions', 'actualIncomes'];
     const tx = db.transaction(stores, 'readonly');
     
     state.goals = await getAllFromStore('goals', tx);
     state.plannedOps = await getAllFromStore('plannedOperations', tx);
     state.actualContribs = await getAllFromStore('actualContributions', tx);
-    
-    if (stores.includes('plannedIncomeItems')) state.plannedIncomes = await getAllFromStore('plannedIncomeItems', tx);
-    if (stores.includes('plannedExpenseItems')) state.plannedExpenses = await getAllFromStore('plannedExpenseItems', tx);
-    if (stores.includes('actualIncomes')) state.actualIncomes = await getAllFromStore('actualIncomes', tx);
+    state.plannedTransactions = await getAllFromStore('plannedTransactions', tx);
+    state.actualIncomes = await getAllFromStore('actualIncomes', tx);
   }
 
   function buildEventsMap() {
@@ -118,28 +97,51 @@ export async function renderCalendarScreen(container, db) {
       return map.get(date);
     };
 
-    // План: Взносы
+    // 1. План: Взносы по целям
     for (const op of state.plannedOps) {
       if (op.state === 'cancelled') continue;
       const date = op.plannedDate || `${op.plannedMonth}-01`;
       if (date) ensure(date).planOps.push(op);
     }
 
-    // Факт: Взносы
+    // 2. Факт: Взносы по целям
     for (const c of state.actualContribs) {
       if (c.reversalStatus !== 'active') continue;
       if (c.actualDate) ensure(c.actualDate).factContribs.push(c);
     }
 
-    // План: Доходы/Расходы (если есть дата)
-    for (const inc of state.plannedIncomes) {
-      if (inc.isActive !== false && inc.plannedDate) ensure(inc.plannedDate).planIncomes.push(inc);
-    }
-    for (const exp of state.plannedExpenses) {
-      if (exp.isActive !== false && exp.plannedDate) ensure(exp.plannedDate).planExpenses.push(exp);
+    // 3. План: Доходы и Расходы (Бюджет)
+    const [year, month] = state.currentMonth.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    for (const tx of state.plannedTransactions) {
+      if (tx.isActive === false) continue;
+
+      let dateStr = null;
+
+      if (tx.frequency === 'one-time') {
+        if (tx.date) dateStr = tx.date;
+      } else if (tx.frequency === 'regular') {
+        // Проверяем, попадает ли текущий просматриваемый месяц в период действия
+        if (state.currentMonth >= tx.startMonth && (!tx.endMonth || state.currentMonth <= tx.endMonth)) {
+          if (tx.dayOfMonth) {
+            // Защита от несуществующих дат (например, 31 февраля)
+            const day = Math.min(tx.dayOfMonth, daysInMonth);
+            dateStr = `${state.currentMonth}-${String(day).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      if (dateStr) {
+        if (tx.type === 'income') {
+          ensure(dateStr).planIncomes.push(tx);
+        } else {
+          ensure(dateStr).planExpenses.push(tx);
+        }
+      }
     }
 
-    // Факт: Доходы
+    // 4. Факт: Доходы (из старой таблицы, если есть)
     for (const inc of state.actualIncomes) {
       if (inc.actualDate) ensure(inc.actualDate).factIncomes.push(inc);
     }
@@ -213,7 +215,7 @@ export async function renderCalendarScreen(container, db) {
     if (ev.planOps.length || ev.planIncomes.length || ev.planExpenses.length) {
       html += '<div class="day-section-title">План</div>';
       
-      // Плановые взносы
+      // Плановые взносы в цели
       for (const op of ev.planOps) {
         const goal = goalsMap.get(op.goalId);
         const { status, actualAmountMinor } = calculateExecutionStatus(op, state.actualContribs);
@@ -235,12 +237,24 @@ export async function renderCalendarScreen(container, db) {
         `;
       }
 
-      // Плановые доходы/расходы (только просмотр, т.к. нет логики фактов)
+      // Плановые доходы
       for (const inc of ev.planIncomes) {
-        html += `<div class="event-item event-plan"><div class="event-title">Доход (План)</div><div class="event-meta">${formatRub(inc.plannedAmountMinor || inc.amountMinor)} ₽</div></div>`;
+        html += `
+          <div class="event-item event-plan" style="border-left-color: var(--green);">
+            <div class="event-title" style="color: var(--green);">+ ${escapeHtml(inc.title)}</div>
+            <div class="event-meta">${formatRub(inc.amountMinor)} ₽ (Доход)</div>
+          </div>
+        `;
       }
+
+      // Плановые расходы
       for (const exp of ev.planExpenses) {
-        html += `<div class="event-item event-plan"><div class="event-title">Расход (План)</div><div class="event-meta">${formatRub(exp.plannedAmountMinor || exp.amountMinor)} ₽</div></div>`;
+        html += `
+          <div class="event-item event-plan" style="border-left-color: var(--red);">
+            <div class="event-title" style="color: var(--red);">- ${escapeHtml(exp.title)}</div>
+            <div class="event-meta">${formatRub(exp.amountMinor)} ₽ (Расход)</div>
+          </div>
+        `;
       }
     }
 
@@ -274,10 +288,7 @@ export async function renderCalendarScreen(container, db) {
     
     const { remainingMinor } = calculateExecutionStatus(op, state.actualContribs);
     const defaultAmount = remainingMinor > 0 ? remainingMinor / 100 : '';
-    
-    // Определяем тип: если сегодня < plannedDate, то 'early', иначе 'planned'
     const today = getTodayString();
-    const type = today < op.plannedDate ? 'early' : 'planned';
 
     return `
       <div class="inline-fact-form" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
@@ -341,7 +352,6 @@ export async function renderCalendarScreen(container, db) {
       btn.addEventListener('click', () => {
         activeFormId = btn.dataset.opId;
         render();
-        // Автофокус на поле ввода
         setTimeout(() => {
           const input = container.querySelector(`#fact-form-${activeFormId} .fact-amount`);
           if (input) input.focus();
@@ -372,7 +382,6 @@ export async function renderCalendarScreen(container, db) {
         const btn = form.querySelector('button[type="submit"]');
         btn.disabled = true; btn.textContent = '...';
 
-        // Определяем тип (досрочный или плановый)
         const type = actualDate < op.plannedDate ? 'early' : 'planned';
 
         const cmd = {
@@ -390,9 +399,9 @@ export async function renderCalendarScreen(container, db) {
 
         try {
           await executeCommand(db, cmd);
-          activeFormId = null; // Закрываем форму
-          await loadData();    // Обновляем данные
-          render();            // Перерисовываем
+          activeFormId = null;
+          await loadData();
+          render();
         } catch (err) {
           alert('Ошибка: ' + err.message);
           btn.disabled = false; btn.textContent = 'Сохранить';
