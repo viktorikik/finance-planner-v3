@@ -1,7 +1,7 @@
 /* ==========================================================================
    Экран «План».
    Добавлена SVG-иконка глаза, кнопка удаления, поле даты, раздельное сворачивание
-   и виджет бюджета (Шаг C).
+   и виджет бюджета (Шаг C). Исправлены локальные даты и тексты.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -9,10 +9,10 @@ import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance }
 import { forecastGoal } from '../../../domain/forecasting/goalForecast.js';
 import { calculateRequiredContribution } from '../../../domain/forecasting/calculateRequiredContribution.js';
 import { generateId } from '../../../domain/shared/ids.js';
-import { renderBudgetWidget } from '../../widgets/BudgetWidget.js'; // <-- НОВЫЙ ИМПОРТ
+import { renderBudgetWidget } from '../../widgets/BudgetWidget.js';
 
 const collapsedGoals = new Set();
-const expandedPlans = new Set(); // Отдельное состояние для списка графиков
+const expandedPlans = new Set();
 let currentFilter = 'all';
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
 let openSettingsGoalId = null;
@@ -40,9 +40,12 @@ export async function renderPlanScreen(container, db) {
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
   
+  // ИСПОЛЬЗУЕМ ЛОКАЛЬНОЕ ВРЕМЯ ВМЕСТО UTC
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const currentDate = new Date().toISOString().slice(0, 10);
   
   const currentMonthIncomes = actualIncomes
     .filter(inc => inc.actualDate.startsWith(currentMonth))
@@ -67,7 +70,6 @@ export async function renderPlanScreen(container, db) {
       </button>
     </div>
 
-    <!-- ВИДЖЕТ БЮДЖЕТА -->
     <div id="budget-widget-container" style="margin-bottom: 16px;"></div>
 
     <section class="card" style="border-color: var(--border);">
@@ -89,8 +91,9 @@ export async function renderPlanScreen(container, db) {
 
     ${poolBalance > 0 ? `
       <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
-        <h2 style="color: var(--green); margin-bottom: 8px;">Общий пул (Свободные деньги)</h2>
-        <div style="font-size: 24px; font-weight: bold;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
+        <h2 style="color: var(--green); margin-bottom: 8px;">Свободные деньги</h2>
+        <div style="font-size: 24px; font-weight: bold; margin-bottom: 4px;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
+        <div style="font-size: 12px; color: var(--muted);">Деньги, не привязанные к конкретной цели. Вы можете распределить их позже.</div>
       </section>
     ` : ''}
 
@@ -104,7 +107,7 @@ export async function renderPlanScreen(container, db) {
             <option value="short">⚡ Краткосрочная</option>
             <option value="long" selected>🏦 Долгосрочная</option>
           </select>
-          <input type="month" id="goal-deadline" required value="${new Date().getFullYear() + 1}-12">
+          <input type="month" id="goal-deadline" required value="${now.getFullYear() + 1}-12">
         </div>
         <button type="submit" class="btn">Создать цель</button>
       </form>
@@ -190,7 +193,11 @@ export async function renderPlanScreen(container, db) {
       } else if (fc.status === 'insufficient_data') {
         forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Укажите срок и настройки для прогноза</div>`;
       } else if (fc.status === 'deadline_passed') {
-        forecastHtml = `<div class="forecast-box" style="color:var(--red); font-size:13px; text-align:center;">Срок прошел, цель не достигнута</div>`;
+        if (currentMonth <= goal.deadlineMonth) {
+           forecastHtml = `<div class="forecast-box" style="color:var(--yellow); font-size:13px; text-align:center;">Не хватает взносов, чтобы успеть к сроку</div>`;
+        } else {
+           forecastHtml = `<div class="forecast-box" style="color:var(--red); font-size:13px; text-align:center;">Срок прошел, цель не достигнута</div>`;
+        }
       }
 
       let settingsHtml = '';
@@ -345,7 +352,6 @@ export async function renderPlanScreen(container, db) {
 
   container.innerHTML = html;
 
-  /* --- ВСТРАИВАЕМ ВИДЖЕТ БЮДЖЕТА --- */
   const widgetContainer = document.getElementById('budget-widget-container');
   if (widgetContainer) {
     await renderBudgetWidget(widgetContainer, db);
@@ -463,10 +469,9 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
-  // Обработчик переключения графика
   container.querySelectorAll('.toggle-more-plans-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
-      e.stopPropagation(); // Чтобы не сворачивалась карточка
+      e.stopPropagation();
       const goalId = btn.dataset.goalId;
       if (expandedPlans.has(goalId)) expandedPlans.delete(goalId);
       else expandedPlans.add(goalId);
@@ -494,7 +499,7 @@ export async function renderPlanScreen(container, db) {
         const clearCmd = { commandId: generateId(), commandType: 'plannedOperation.clearForGoal', payload: { goalId }, registeredAt: new Date().toISOString() };
         await executeCommand(db, clearCmd);
       } else {
-        if (!confirm('Система разделит оставшуюся сумму на равные части до дедлайна. Продолжить?')) return;
+        if (!confirm('Система разделит оставшуюся сумму с учетом процентов и инфляции. Продолжить?')) return;
       }
 
       const cmd = { commandId: generateId(), commandType: 'plannedOperation.generate', payload: { goalId, currentMonth }, registeredAt: new Date().toISOString() };
@@ -560,7 +565,7 @@ export async function renderPlanScreen(container, db) {
       const goal = activeGoals.find(g => g.id === goalId);
       const balance = calculateGoalBalance(goalId, moneyEntries);
       let moveToPool = false;
-      if (balance > 0) { moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Общий пул.\nОтмена — сжечь (удалить).`); } else { if (!confirm('Удалить цель?')) return; }
+      if (balance > 0) { moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Свободные деньги.\nОтмена — сжечь (удалить).`); } else { if (!confirm('Удалить цель?')) return; }
       const cmd = { commandId: generateId(), commandType: 'goal.delete', payload: { goalId, moveToPool }, registeredAt: new Date().toISOString() };
       try { await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); }
     });
