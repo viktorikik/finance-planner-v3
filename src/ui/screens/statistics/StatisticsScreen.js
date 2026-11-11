@@ -44,7 +44,7 @@ export async function renderStatisticsScreen(container, db) {
           <div style="font-size: 20px; font-weight: 700;">${formatRub(totalInGoals)} ₽</div>
         </div>
         <div style="background: var(--card-2); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--border);">
-          <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">В пуле</div>
+          <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">Свободные</div>
           <div style="font-size: 20px; font-weight: 700; color: var(--accent);">${formatRub(poolBalance)} ₽</div>
         </div>
       </div>
