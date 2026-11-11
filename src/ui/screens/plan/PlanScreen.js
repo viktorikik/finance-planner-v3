@@ -153,7 +153,8 @@ export async function renderPlanScreen(container, db) {
            const req = calculateRequiredContribution(goal, balance, generalInflationSetting, currentMonth, goal.deadlineMonth);
            if (req.status === 'success') {
              reqContrib = req.requiredBaseContributionMinor;
-             futureOps = req.requiredSchedule;
+             // ВАЖНО: маппим поля из calculateRequiredContribution в формат forecastGoal
+             futureOps = req.requiredSchedule.map(op => ({ plannedMonth: op.month, plannedAmountMinor: op.amountMinor }));
            }
         } else if (goal.planMode === 'manual' && goal.manualMonthlyAmountMinor) {
           const monthsToGenerate = goal.deadlineMonth ? (() => {
@@ -193,6 +194,7 @@ export async function renderPlanScreen(container, db) {
       } else if (fc.status === 'insufficient_data') {
         forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Укажите срок и настройки для прогноза</div>`;
       } else if (fc.status === 'deadline_passed') {
+        // ПРОВЕРКА: если дедлайн в будущем, но не хватает денег
         if (currentMonth <= goal.deadlineMonth) {
            forecastHtml = `<div class="forecast-box" style="color:var(--yellow); font-size:13px; text-align:center;">Не хватает взносов, чтобы успеть к сроку</div>`;
         } else {
