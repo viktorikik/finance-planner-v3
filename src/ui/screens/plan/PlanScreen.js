@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлены переводы между Свободными деньгами и Целями.
+   Исправлены названия кнопок перевода (Свободные деньги вместо Пула).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -15,8 +15,8 @@ const expandedPlans = new Set();
 let currentFilter = 'all';
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
 let openSettingsGoalId = null;
-let openTransferGoalId = null; // Для вывода из цели в пул
-let isPoolTransferOpen = false; // Для перевода из пула в цель
+let openTransferGoalId = null;
+let isPoolTransferOpen = false;
 const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
@@ -310,7 +310,7 @@ export async function renderPlanScreen(container, db) {
         transferHtml = `
           <form class="goal-transfer-form" data-goal-id="${goal.id}" style="background: rgba(124,92,255,0.1); padding: 12px; border-radius: 8px; margin-top: 8px; border: 1px solid var(--accent);">
             <div class="form-group">
-              <label>Сумма для вывода в пул (макс. ${formatRub(balance)} ₽):</label>
+              <label>Сумма для вывода в свободные (макс. ${formatRub(balance)} ₽):</label>
               <input type="number" class="transfer-to-pool-amount" placeholder="Сумма (₽)" max="${balance / 100}" required min="1">
             </div>
             <div style="display: flex; gap: 8px;">
@@ -385,13 +385,16 @@ export async function renderPlanScreen(container, db) {
               <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 20%;">+ План</button>
             </div>
 
-            <div style="display: flex; gap: 8px; margin-top: 4px;">
-              <form class="add-contrib-form" data-goal-id="${goal.id}" style="flex: 1;">
-                <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
-                <button type="submit" class="btn btn-small" title="Внести факт">+</button>
-              </form>
-              <button type="button" class="btn btn-small btn-outline" data-action="open-transfer" data-goal-id="${goal.id}" style="flex-shrink: 0; color: var(--accent); border-color: var(--accent);">В пул</button>
-            </div>
+            <form class="add-contrib-form" data-goal-id="${goal.id}">
+              <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
+              <button type="submit" class="btn btn-small" title="Внести факт">+</button>
+            </form>
+
+            ${balance > 0 ? `
+              <button type="button" class="btn-text" data-action="open-transfer" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 4px; color: var(--accent); font-size: 13px;">
+                Вывести в свободные деньги
+              </button>
+            ` : ''}
 
             <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
               <input type="month" class="m-month" required value="${calcStartMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
@@ -447,7 +450,6 @@ export async function renderPlanScreen(container, db) {
     renderPlanScreen(container, db);
   });
 
-  // Обработчик для дополнительных настроек при СОЗДАНИИ
   const toggleAdvBtn = document.getElementById('toggle-advanced-create');
   const advFields = document.getElementById('advanced-create-fields');
   const createIndexationCheckbox = document.getElementById('goal-indexationEnabled');
@@ -516,7 +518,7 @@ export async function renderPlanScreen(container, db) {
     });
   }
 
-  // Перевод из ЦЕЛИ в ПУЛ
+  // Перевод из ЦЕЛИ в ПУЛ (в свободные деньги)
   container.querySelectorAll('[data-action="open-transfer"]').forEach(btn => {
     btn.addEventListener('click', () => {
       openTransferGoalId = btn.dataset.goalId;
