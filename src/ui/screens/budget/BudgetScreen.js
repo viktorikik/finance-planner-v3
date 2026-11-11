@@ -1,5 +1,6 @@
 /* ==========================================================================
    Экран «Бюджет». Управление доходами и расходами + Годовой прогноз.
+   Исправлена таблица годового прогноза (заголовки, сетка, итоги).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -12,7 +13,7 @@ const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFr
 export async function renderBudgetScreen(container, db) {
   const now = new Date();
   let currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  let isYearlyViewVisible = false; // Состояние для переключения года
+  let isYearlyViewVisible = false;
 
   async function render() {
     container.innerHTML = '<div class="loading">Загрузка бюджета...</div>';
@@ -33,37 +34,67 @@ export async function renderBudgetScreen(container, db) {
     const state = { goals, plannedOperations, plannedTransactions };
     const budget = calculateMonthlyBudget(currentMonth, state);
 
-    // Генерируем HTML для годового прогноза, если он включен
     let yearlyHtml = '';
     if (isYearlyViewVisible) {
       const yearlyData = calculateYearlyBudget(currentMonth, state);
-      
+
+      // Итоги за год
+      const yearTotals = yearlyData.reduce((acc, item) => {
+        acc.income += item.totalIncome;
+        acc.expense += item.totalExpense;
+        acc.contribution += item.totalContribution;
+        acc.balance += item.balance;
+        return acc;
+      }, { income: 0, expense: 0, contribution: 0, balance: 0 });
+
       yearlyHtml = `
         <div class="card" style="margin-top: 16px; background: rgba(124,92,255,0.05); border-color: var(--accent);">
-          <h2 style="color: var(--accent); margin-bottom: 12px;">Прогноз на 12 месяцев</h2>
-          <div style="display: flex; flex-direction: column; gap: 4px;">
+          <h2 style="color: var(--accent); margin-bottom: 4px;">Прогноз на 12 месяцев</h2>
+          <p style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">
+            Нажмите на строку месяца, чтобы открыть детали.
+          </p>
+
+          <div class="yearly-table">
+            <div class="yearly-header">
+              <span>Месяц</span>
+              <span style="text-align: right;">Доходы</span>
+              <span style="text-align: right;">Расходы</span>
+              <span style="text-align: right;">Остаток</span>
+            </div>
+
             ${yearlyData.map(item => {
               const [y, m] = item.month.split('-').map(Number);
-              const monthName = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
-              
+              const monthName = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'short' });
+              const yearShort = String(y).slice(2);
               const isNegative = item.balance < 0;
               const balanceColor = isNegative ? 'var(--red)' : 'var(--green)';
-              const bgStyle = isNegative ? 'background: rgba(255, 92, 124, 0.1);' : '';
-              
+              const totalExp = item.totalExpense + item.totalContribution;
+
               return `
-                <div class="forecast-month-row" data-month="${item.month}" style="display:flex; justify-content:space-between; align-items:center; padding: 8px 12px; border-radius: 8px; ${bgStyle} cursor: pointer; transition: background 0.15s;">
-                  <span style="font-weight: 600; text-transform: capitalize; width: 70px;">${monthName}</span>
-                  <span style="font-size: 12px; color: var(--muted); text-align: right; flex: 1;">
-                    +${formatMoney(item.totalIncome)} / -${formatMoney(item.totalExpense + item.totalContribution)}
-                  </span>
-                  <span style="font-weight: 700; color: ${balanceColor}; min-width: 80px; text-align: right;">
-                    ${item.balance > 0 ? '+' : ''}${formatMoney(item.balance)} ₽
-                  </span>
+                <div class="yearly-row ${isNegative ? 'yearly-row-negative' : ''}" data-month="${item.month}">
+                  <span class="yearly-month">${monthName} <span style="color:var(--muted); font-size:11px;">'${yearShort}</span></span>
+                  <span class="yearly-cell yearly-income">+${formatMoney(item.totalIncome)}</span>
+                  <span class="yearly-cell yearly-expense">−${formatMoney(totalExp)}</span>
+                  <span class="yearly-cell yearly-balance" style="color:${balanceColor};">${item.balance > 0 ? '+' : ''}${formatMoney(item.balance)}</span>
                 </div>
               `;
             }).join('')}
+
+            <div class="yearly-row yearly-total-row">
+              <span class="yearly-month">Итого</span>
+              <span class="yearly-cell yearly-income">+${formatMoney(yearTotals.income)}</span>
+              <span class="yearly-cell yearly-expense">−${formatMoney(yearTotals.expense + yearTotals.contribution)}</span>
+              <span class="yearly-cell yearly-balance" style="color:${yearTotals.balance < 0 ? 'var(--red)' : 'var(--green)'};">
+                ${yearTotals.balance > 0 ? '+' : ''}${formatMoney(yearTotals.balance)}
+              </span>
+            </div>
           </div>
-          <p style="font-size: 12px; color: var(--muted); margin-top: 12px; text-align: center;">Нажмите на месяц, чтобы посмотреть детали</p>
+
+          <div class="yearly-legend">
+            <span><span style="color:var(--green);">●</span> Доходы</span>
+            <span><span style="color:var(--red);">●</span> Расходы (вкл. взносы)</span>
+            <span><span style="color:var(--red); background: rgba(255,92,124,0.15); padding: 1px 6px; border-radius: 4px;">●</span> Дефицит</span>
+          </div>
         </div>
       `;
     }
@@ -114,7 +145,6 @@ export async function renderBudgetScreen(container, db) {
       <div id="tx-form-container"></div>
     `;
 
-    // Обработчики
     document.getElementById('budget-month-picker').addEventListener('change', (e) => {
       currentMonth = e.target.value;
       render();
@@ -125,11 +155,10 @@ export async function renderBudgetScreen(container, db) {
       render();
     });
 
-    // Клик по месяцу в годовом прогнозе (чтобы провалиться в детали)
-    container.querySelectorAll('.forecast-month-row').forEach(row => {
+    container.querySelectorAll('.yearly-row[data-month]').forEach(row => {
       row.addEventListener('click', () => {
         currentMonth = row.dataset.month;
-        isYearlyViewVisible = false; // Скрываем прогноз, чтобы сразу увидеть детали
+        isYearlyViewVisible = false;
         render();
       });
     });
