@@ -1,7 +1,7 @@
 /* ==========================================================================
    Экран «План».
    Добавлена SVG-иконка глаза, кнопка удаления, поле даты, раздельное сворачивание
-   и виджет бюджета (Шаг C). Исправлены локальные даты и тексты.
+   и виджет бюджета (Шаг C). Исправлены локальные даты, тексты и настройки.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -131,7 +131,6 @@ export async function renderPlanScreen(container, db) {
       const target = goal.targetAmountMinor;
       const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
       
-      // ЗАЩИТА: отфильтровываем операции без plannedMonth
       const goalPlans = allPlannedOps
         .filter(op => op.goalId === goal.id && op.state === 'scheduled' && op.plannedMonth)
         .sort((a, b) => (a.plannedMonth || '').localeCompare(b.plannedMonth || ''));
@@ -141,8 +140,11 @@ export async function renderPlanScreen(container, db) {
       const visiblePlans = isPlansExpanded ? goalPlans : goalPlans.slice(0, 3);
       const isSettingsOpen = openSettingsGoalId === goal.id;
 
+      // Определяем месяц старта для расчетов (если startMonth в будущем, берем его, иначе текущий)
+      const calcStartMonth = (goal.startMonth && goal.startMonth > currentMonth) ? goal.startMonth : currentMonth;
+
       let forecastHtml = '';
-      const cacheKey = `${goal.id}_${balance}_${goal.targetAmountMinor}_${goal.annualRate}_${goal.individualInflationRate}_${goal.indexationEnabled}_${goal.indexationRate}_${goal.planMode}_${goal.manualMonthlyAmountMinor}_${goal.deadlineMonth}`;
+      const cacheKey = `${goal.id}_${balance}_${goal.targetAmountMinor}_${goal.annualRate}_${goal.individualInflationRate}_${goal.indexationEnabled}_${goal.indexationRate}_${goal.planMode}_${goal.manualMonthlyAmountMinor}_${goal.deadlineMonth}_${calcStartMonth}`;
       
       if (!forecastCache.has(cacheKey)) {
         let reqContrib = null;
@@ -151,20 +153,19 @@ export async function renderPlanScreen(container, db) {
         if (goalPlans.length > 0) {
           futureOps = goalPlans.map(op => ({ plannedMonth: op.plannedMonth, plannedAmountMinor: op.plannedAmountMinor }));
         } else if (goal.deadlineMonth && goal.planMode === 'auto') {
-           const req = calculateRequiredContribution(goal, balance, generalInflationSetting, currentMonth, goal.deadlineMonth);
+           const req = calculateRequiredContribution(goal, balance, generalInflationSetting, calcStartMonth, goal.deadlineMonth);
            if (req.status === 'success') {
              reqContrib = req.requiredBaseContributionMinor;
-             // ВАЖНО: маппим поля из calculateRequiredContribution в формат forecastGoal
              futureOps = req.requiredSchedule.map(op => ({ plannedMonth: op.month, plannedAmountMinor: op.amountMinor }));
            }
         } else if (goal.planMode === 'manual' && goal.manualMonthlyAmountMinor) {
           const monthsToGenerate = goal.deadlineMonth ? (() => {
-            const [sY, sM] = currentMonth.split('-').map(Number);
+            const [sY, sM] = calcStartMonth.split('-').map(Number);
             const [dY, dM] = goal.deadlineMonth.split('-').map(Number);
             return Math.max(1, (dY - sY) * 12 + (dM - sM) + 1);
           })() : 120;
 
-          let [cy, cm] = currentMonth.split('-').map(Number);
+          let [cy, cm] = calcStartMonth.split('-').map(Number);
           for (let i = 0; i < monthsToGenerate; i++) {
             let amt = goal.manualMonthlyAmountMinor;
             if (goal.indexationEnabled) {
@@ -175,7 +176,7 @@ export async function renderPlanScreen(container, db) {
           }
         }
 
-        const fc = forecastGoal(goal, balance, futureOps, generalInflationSetting, currentMonth, 600);
+        const fc = forecastGoal(goal, balance, futureOps, generalInflationSetting, calcStartMonth, 600);
         forecastCache.set(cacheKey, { reqContrib, fc });
       }
 
@@ -195,7 +196,6 @@ export async function renderPlanScreen(container, db) {
       } else if (fc.status === 'insufficient_data') {
         forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Укажите срок и настройки для прогноза</div>`;
       } else if (fc.status === 'deadline_passed') {
-        // ПРОВЕРКА: если дедлайн в будущем, но не хватает денег
         if (currentMonth <= goal.deadlineMonth) {
            forecastHtml = `<div class="forecast-box" style="color:var(--yellow); font-size:13px; text-align:center;">Не хватает взносов, чтобы успеть к сроку</div>`;
         } else {
@@ -207,40 +207,59 @@ export async function renderPlanScreen(container, db) {
       if (isSettingsOpen) {
         settingsHtml = `
           <form class="goal-settings-form" data-goal-id="${goal.id}">
-            <div class="form-group">
-              <label>Срок (дедлайн):</label>
-              <input type="month" name="deadlineMonth" value="${goal.deadlineMonth || ''}">
+            <div class="settings-section">
+              <h4>📅 Сроки</h4>
+              <div class="form-group">
+                <label>Начать копить с:</label>
+                <input type="month" name="startMonth" value="${goal.startMonth || currentMonth}">
+              </div>
+              <div class="form-group">
+                <label>Закончить (дедлайн):</label>
+                <input type="month" name="deadlineMonth" value="${goal.deadlineMonth || ''}">
+              </div>
             </div>
-            <div class="form-group">
-              <label>Ставка доходности (% годовых):</label>
-              <input type="number" step="0.1" name="annualRate" value="${goal.annualRate !== null ? goal.annualRate : ''}" placeholder="0">
+
+            <div class="settings-section">
+              <h4>📈 Доходность</h4>
+              <div class="form-group">
+                <label>Ставка (% годовых):</label>
+                <input type="number" step="0.1" name="annualRate" value="${goal.annualRate !== null ? goal.annualRate : ''}" placeholder="0">
+              </div>
             </div>
-            <div class="form-group">
-              <label>Индивидуальная инфляция (% годовых):</label>
-              <input type="number" step="0.1" name="individualInflationRate" value="${goal.individualInflationRate !== null ? goal.individualInflationRate : ''}" placeholder="Общая">
+
+            <div class="settings-section">
+              <h4>🎈 Инфляция и Индексация</h4>
+              <div class="form-group">
+                <label>Индивидуальная инфляция (% годовых):</label>
+                <input type="number" step="0.1" name="individualInflationRate" value="${goal.individualInflationRate !== null ? goal.individualInflationRate : ''}" placeholder="Общая">
+              </div>
+              <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 8px;">
+                <input type="checkbox" name="indexationEnabled" ${goal.indexationEnabled ? 'checked' : ''} style="width: auto;">
+                <label style="margin:0;">Индексировать взнос ежегодно</label>
+              </div>
+              ${goal.indexationEnabled ? `
+              <div class="form-group" style="margin-top: 8px;">
+                <label>Ставка индексации (%):</label>
+                <input type="number" step="0.1" name="indexationRate" value="${goal.indexationRate || 0}">
+              </div>` : ''}
             </div>
-            <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px;">
-              <input type="checkbox" name="indexationEnabled" ${goal.indexationEnabled ? 'checked' : ''}>
-              <label style="margin:0;">Индексировать взнос ежегодно</label>
+
+            <div class="settings-section">
+              <h4>⚙️ Режим плана</h4>
+              <div class="form-group">
+                <select name="planMode">
+                  <option value="auto" ${goal.planMode === 'auto' ? 'selected' : ''}>Автоматический (расчетный)</option>
+                  <option value="manual" ${goal.planMode === 'manual' ? 'selected' : ''}>Ручной</option>
+                </select>
+              </div>
+              ${goal.planMode === 'manual' ? `
+              <div class="form-group" style="margin-top: 8px;">
+                <label>Сумма ручного взноса (₽/мес):</label>
+                <input type="number" name="manualMonthlyAmountMinor" value="${goal.manualMonthlyAmountMinor ? goal.manualMonthlyAmountMinor / 100 : ''}">
+              </div>` : ''}
             </div>
-            ${goal.indexationEnabled ? `
-            <div class="form-group">
-              <label>Ставка индексации (%):</label>
-              <input type="number" step="0.1" name="indexationRate" value="${goal.indexationRate || 0}">
-            </div>` : ''}
-            <div class="form-group">
-              <label>Режим плана:</label>
-              <select name="planMode">
-                <option value="auto" ${goal.planMode === 'auto' ? 'selected' : ''}>Автоматический (расчетный)</option>
-                <option value="manual" ${goal.planMode === 'manual' ? 'selected' : ''}>Ручной</option>
-              </select>
-            </div>
-            ${goal.planMode === 'manual' ? `
-            <div class="form-group">
-              <label>Сумма ручного взноса (₽/мес):</label>
-              <input type="number" name="manualMonthlyAmountMinor" value="${goal.manualMonthlyAmountMinor ? goal.manualMonthlyAmountMinor / 100 : ''}">
-            </div>` : ''}
-            <div style="display:flex; gap:8px; margin-top:12px;">
+
+            <div style="display:flex; gap:8px; margin-top:16px;">
               <button type="submit" class="btn btn-small" style="flex:1;">Сохранить</button>
               <button type="button" class="btn btn-small btn-outline" data-action="close-settings" style="flex:1;">Отмена</button>
             </div>
@@ -312,7 +331,7 @@ export async function renderPlanScreen(container, db) {
             </div>
 
             <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
-              <input type="month" class="m-month" required value="${currentMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
+              <input type="month" class="m-month" required value="${calcStartMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
               <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
               <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
             </form>
@@ -404,6 +423,7 @@ export async function renderPlanScreen(container, db) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const goalId = form.dataset.goalId;
+      const startMonthVal = form.querySelector('[name="startMonth"]').value;
       const deadlineVal = form.querySelector('[name="deadlineMonth"]').value;
       const annualRateVal = form.querySelector('[name="annualRate"]').value;
       const indInflVal = form.querySelector('[name="individualInflationRate"]').value;
@@ -414,6 +434,7 @@ export async function renderPlanScreen(container, db) {
 
       const payload = {
         goalId,
+        startMonth: startMonthVal || null,
         deadlineMonth: deadlineVal === '' ? null : deadlineVal,
         annualRate: annualRateVal === '' ? null : Number(annualRateVal),
         individualInflationRate: indInflVal === '' ? null : Number(indInflVal),
@@ -463,7 +484,7 @@ export async function renderPlanScreen(container, db) {
 
     const cmd = {
       commandId: generateId(), commandType: 'goal.create',
-      payload: { name, category, targetAmountMinor: Math.round(targetRub * 100), deadlineMonth },
+      payload: { name, category, targetAmountMinor: Math.round(targetRub * 100), deadlineMonth, startMonth: currentMonth },
       registeredAt: new Date().toISOString()
     };
     try {
@@ -505,7 +526,8 @@ export async function renderPlanScreen(container, db) {
         if (!confirm('Система разделит оставшуюся сумму с учетом процентов и инфляции. Продолжить?')) return;
       }
 
-      const cmd = { commandId: generateId(), commandType: 'plannedOperation.generate', payload: { goalId, currentMonth }, registeredAt: new Date().toISOString() };
+      const calcStartMonth = (goal.startMonth && goal.startMonth > currentMonth) ? goal.startMonth : currentMonth;
+      const cmd = { commandId: generateId(), commandType: 'plannedOperation.generate', payload: { goalId, currentMonth: calcStartMonth }, registeredAt: new Date().toISOString() };
       try { btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); btn.disabled = false; }
     });
   });
