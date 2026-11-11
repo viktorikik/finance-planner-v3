@@ -88,8 +88,27 @@ export async function executeCommand(db, command) {
       case 'money.reverse':
         plan = planMovementReversal(payload.movementId, state);
         break;
+      
       case 'goal.create':
-        plan = planGoalCreate(payload);
+        // Убеждаемся, что все поля сохраняются, если planGoalCreate не справляется
+        const newGoal = {
+          id: generateId(),
+          status: 'active',
+          name: payload.name,
+          targetAmountMinor: Math.round(payload.targetAmountMinor),
+          category: payload.category || 'long',
+          startMonth: payload.startMonth || new Date().toISOString().slice(0, 7),
+          deadlineMonth: payload.deadlineMonth || null,
+          annualRate: payload.annualRate !== undefined ? payload.annualRate : null,
+          individualInflationRate: payload.individualInflationRate !== undefined ? payload.individualInflationRate : null,
+          indexationEnabled: payload.indexationEnabled || false,
+          indexationRate: payload.indexationRate || 0,
+          planMode: payload.planMode || 'auto',
+          manualMonthlyAmountMinor: payload.manualMonthlyAmountMinor || null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        plan = { newGoals: [newGoal] };
         break;
       
       case 'goal.updateSettings':
