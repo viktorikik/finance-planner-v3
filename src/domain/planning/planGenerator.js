@@ -40,15 +40,16 @@ export function generatePlanForGoal(goal, currentBalanceMinor, currentMonth, gen
   const now = new Date().toISOString();
 
   // Берем готовый график из прогноза (он уже учитывает индексацию и проценты)
+  // ВАЖНО: calculateRequiredContribution возвращает { month, amountMinor }
   for (const op of req.requiredSchedule) {
-    if (op.plannedAmountMinor <= 0) continue;
+    if (op.amountMinor <= 0) continue;
 
     newPlannedOperations.push({
       id: generateId(),
       goalId: goal.id,
-      plannedMonth: op.plannedMonth,
-      plannedDate: `${op.plannedMonth}-01`,
-      plannedAmountMinor: op.plannedAmountMinor,
+      plannedMonth: op.month,
+      plannedDate: `${op.month}-01`,
+      plannedAmountMinor: op.amountMinor,
       source: 'generated',
       state: 'scheduled',
       createdAt: now,
