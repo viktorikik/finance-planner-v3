@@ -22,13 +22,12 @@ export async function renderStatisticsScreen(container, db) {
 
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
   
-  // Общая сумма доходов и взносов для справки
   const totalIncomesRub = actualIncomes.reduce((s, i) => s + i.amountMinor, 0);
   const totalContribsRub = actualContributions.filter(c => c.reversalStatus === 'active' && c.type !== 'initial').reduce((s, c) => s + c.amountMinor, 0);
 
   let savingsHint = '';
   if (savingsRate > 100) {
-    savingsHint = '<div style="font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4;">Вы откладываете больше, чем внесли доходов. Это нормально, если вы используете накопления из прошлого.</div>';
+    savingsHint = '<div style="font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4;">Вы откладываете больше, чем заработали в этом месяце. Возможно, вы используете накопления из прошлого.</div>';
   }
 
   let html = `
@@ -52,12 +51,12 @@ export async function renderStatisticsScreen(container, db) {
     </section>
 
     <section class="card">
-      <h2>Норма сбережений</h2>
+      <h2>Сколько вы откладываете</h2>
       ${savingsRate !== null ? `
         <div style="display: flex; align-items: center; justify-content: space-between;">
           <div>
             <div style="font-size: 32px; font-weight: 800; color: var(--accent);">${savingsRate.toFixed(1)}%</div>
-            <div style="font-size: 13px; color: var(--muted);">от фактических доходов</div>
+            <div style="font-size: 13px; color: var(--muted);">от всех ваших доходов</div>
           </div>
           <div style="text-align: right; font-size: 13px; color: var(--muted);">
             Доходы: ${formatRub(totalIncomesRub)} ₽<br>
@@ -67,6 +66,9 @@ export async function renderStatisticsScreen(container, db) {
         <div class="progress-bar" style="margin-top: 16px; height: 8px;">
           <div class="fill" style="width: ${Math.min(100, savingsRate)}%; background: var(--accent);"></div>
         </div>
+        <p style="font-size: 14px; margin-top: 16px; line-height: 1.5; color: var(--text);">
+           Это значит, что из каждых заработанных <b>1000 ₽</b> вы оставляете на цели <b>${(savingsRate * 10).toFixed(0)} ₽</b>.
+        </p>
         ${savingsHint}
       ` : `
         <p class="muted" style="text-align: left; padding: 0;">Пока нет данных о фактических доходах. Как только вы начнете вносить доходы, мы посчитаем, какой процент от них вы откладываете.</p>
