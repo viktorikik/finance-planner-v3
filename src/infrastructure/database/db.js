@@ -15,7 +15,7 @@ export function openDB() {
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
 
-      // Удаляем устаревшие таблицы, если они были созданы в промежуточных версиях
+      // Удаляем устаревшие таблицы, если они были созданы ранее
       if (db.objectStoreNames.contains('plannedIncomeItems')) {
         db.deleteObjectStore('plannedIncomeItems');
       }
@@ -23,7 +23,7 @@ export function openDB() {
         db.deleteObjectStore('plannedExpenseItems');
       }
 
-      // Проходим по всем актуальным хранилищам и создаем недостающие
+      // Проходим по всем актуальным хранилищам
       for (const [storeName, config] of Object.entries(STORES)) {
         let store;
         
