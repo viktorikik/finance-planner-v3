@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v37';
+const CACHE_VERSION = 'v38';
 const CACHE_NAME = `finance-planner-${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -36,7 +36,6 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(event.request.url);
   
-  // Network-First для JS и HTML
   if (url.pathname.endsWith('.js') || url.pathname.endsWith('.html') || url.pathname === '/') {
     event.respondWith(
       fetch(event.request)
@@ -53,7 +52,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-First для остального
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       if (cachedResponse) {
