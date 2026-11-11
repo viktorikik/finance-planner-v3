@@ -6,7 +6,6 @@ import { migrateV7toV8 } from './migrateV7.js';
 
 export async function runMigrationIfNeeded(db) {
   // Таблицы, которые нужно открыть в транзакции
-  // Убраны plannedIncomeItems и plannedExpenseItems, так как они удалены из новой схемы
   const stores = [
     'meta', 'goals', 
     'actualContributions', 'initialContributions', 'moneyLots', 'moneyEntries'
