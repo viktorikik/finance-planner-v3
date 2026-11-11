@@ -237,3 +237,124 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
   font-size: 14px;
   background: var(--card-2);
 }
+
+/* ==========================================================================
+   Таблица годового прогноза (Шаг D)
+   ========================================================================== */
+.yearly-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.yearly-header,
+.yearly-row {
+  display: grid;
+  grid-template-columns: 72px 1fr 1fr 96px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums; /* Чтобы цифры не "плясали" */
+}
+
+.yearly-header {
+  background: var(--card-2);
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 8px 10px;
+  margin-bottom: 4px;
+}
+
+.yearly-header span,
+.yearly-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.yearly-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.yearly-row:hover {
+  background: var(--card-2);
+  border-color: var(--accent);
+}
+
+.yearly-row-negative {
+  background: rgba(255, 92, 124, 0.08);
+  border-color: rgba(255, 92, 124, 0.3);
+}
+
+.yearly-row-negative:hover {
+  background: rgba(255, 92, 124, 0.15);
+}
+
+.yearly-month {
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--text);
+}
+
+.yearly-income {
+  color: var(--green);
+  text-align: right;
+}
+
+.yearly-expense {
+  color: var(--red);
+  text-align: right;
+}
+
+.yearly-balance {
+  text-align: right;
+  font-weight: 700;
+}
+
+.yearly-total-row {
+  margin-top: 6px;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  font-weight: 700;
+  cursor: default;
+}
+
+.yearly-total-row:hover {
+  background: var(--card-2);
+  border-color: var(--border);
+}
+
+.yearly-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Адаптив для узких экранов */
+@media (max-width: 380px) {
+  .yearly-header,
+  .yearly-row {
+    grid-template-columns: 56px 1fr 1fr 80px;
+    font-size: 12px;
+    padding: 6px 8px;
+    gap: 4px;
+  }
+  .yearly-header {
+    font-size: 10px;
+  }
+}
