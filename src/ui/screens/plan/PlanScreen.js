@@ -1,8 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлена SVG-иконка глаза, кнопка удаления, поле даты, раздельное сворачивание
-   и виджет бюджета (Шаг C). Исправлены локальные даты, тексты и настройки.
-   Расширена форма создания цели.
+   Добавлены переводы между Свободными деньгами и Целями.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -17,6 +15,8 @@ const expandedPlans = new Set();
 let currentFilter = 'all';
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
 let openSettingsGoalId = null;
+let openTransferGoalId = null; // Для вывода из цели в пул
+let isPoolTransferOpen = false; // Для перевода из пула в цель
 const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
@@ -89,11 +89,27 @@ export async function renderPlanScreen(container, db) {
       </form>
     </section>
 
-    ${poolBalance > 0 ? `
+    ${poolBalance > 0 || isPoolTransferOpen ? `
       <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
         <h2 style="color: var(--green); margin-bottom: 8px;">Свободные деньги</h2>
         <div style="font-size: 24px; font-weight: bold; margin-bottom: 4px;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
-        <div style="font-size: 12px; color: var(--muted);">Деньги, не привязанные к конкретной цели. Вы можете распределить их позже.</div>
+        <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Деньги, не привязанные к конкретной цели.</div>
+        
+        ${!isPoolTransferOpen ? `
+          <button class="btn btn-small btn-outline" id="btn-open-pool-transfer" style="border-color: var(--green); color: var(--green);">Перевести в цель</button>
+        ` : `
+          <form id="pool-transfer-form" style="display: flex; flex-direction: column; gap: 8px; background: var(--card-2); padding: 12px; border-radius: 8px;">
+            <select id="transfer-target-goal" required>
+              <option value="">Выберите цель</option>
+              ${activeGoals.map(g => `<option value="${g.id}">${g.name}</option>`).join('')}
+            </select>
+            <input type="number" id="transfer-from-pool-amount" placeholder="Сумма (₽)" max="${poolBalance / 100}" required min="1">
+            <div style="display: flex; gap: 8px;">
+              <button type="submit" class="btn btn-small" style="flex: 1;">Перевести</button>
+              <button type="button" class="btn btn-small btn-outline" id="btn-cancel-pool-transfer" style="flex: 1;">Отмена</button>
+            </div>
+          </form>
+        `}
       </section>
     ` : ''}
 
@@ -165,6 +181,7 @@ export async function renderPlanScreen(container, db) {
       const isPlansExpanded = expandedPlans.has(goal.id);
       const visiblePlans = isPlansExpanded ? goalPlans : goalPlans.slice(0, 3);
       const isSettingsOpen = openSettingsGoalId === goal.id;
+      const isTransferOpen = openTransferGoalId === goal.id;
 
       const calcStartMonth = (goal.startMonth && goal.startMonth > currentMonth) ? goal.startMonth : currentMonth;
 
@@ -243,7 +260,6 @@ export async function renderPlanScreen(container, db) {
                 <input type="month" name="deadlineMonth" value="${goal.deadlineMonth || ''}">
               </div>
             </div>
-
             <div class="settings-section">
               <h4>📈 Доходность</h4>
               <div class="form-group">
@@ -251,7 +267,6 @@ export async function renderPlanScreen(container, db) {
                 <input type="number" step="0.1" name="annualRate" value="${goal.annualRate !== null ? goal.annualRate : ''}" placeholder="0">
               </div>
             </div>
-
             <div class="settings-section">
               <h4>🎈 Инфляция и Индексация</h4>
               <div class="form-group">
@@ -268,12 +283,11 @@ export async function renderPlanScreen(container, db) {
                 <input type="number" step="0.1" name="indexationRate" value="${goal.indexationRate || 0}">
               </div>` : ''}
             </div>
-
             <div class="settings-section">
               <h4>⚙️ Режим плана</h4>
               <div class="form-group">
                 <select name="planMode">
-                  <option value="auto" ${goal.planMode === 'auto' ? 'selected' : ''}>Автоматический (расчетный)</option>
+                  <option value="auto" ${goal.planMode === 'auto' ? 'selected' : ''}>Автоматический</option>
                   <option value="manual" ${goal.planMode === 'manual' ? 'selected' : ''}>Ручной</option>
                 </select>
               </div>
@@ -283,10 +297,25 @@ export async function renderPlanScreen(container, db) {
                 <input type="number" name="manualMonthlyAmountMinor" value="${goal.manualMonthlyAmountMinor ? goal.manualMonthlyAmountMinor / 100 : ''}">
               </div>` : ''}
             </div>
-
             <div style="display:flex; gap:8px; margin-top:16px;">
               <button type="submit" class="btn btn-small" style="flex:1;">Сохранить</button>
               <button type="button" class="btn btn-small btn-outline" data-action="close-settings" style="flex:1;">Отмена</button>
+            </div>
+          </form>
+        `;
+      }
+
+      let transferHtml = '';
+      if (isTransferOpen) {
+        transferHtml = `
+          <form class="goal-transfer-form" data-goal-id="${goal.id}" style="background: rgba(124,92,255,0.1); padding: 12px; border-radius: 8px; margin-top: 8px; border: 1px solid var(--accent);">
+            <div class="form-group">
+              <label>Сумма для вывода в пул (макс. ${formatRub(balance)} ₽):</label>
+              <input type="number" class="transfer-to-pool-amount" placeholder="Сумма (₽)" max="${balance / 100}" required min="1">
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button type="submit" class="btn btn-small" style="flex:1;">Вывести</button>
+              <button type="button" class="btn btn-small btn-outline" data-action="cancel-transfer" data-goal-id="${goal.id}" style="flex:1;">Отмена</button>
             </div>
           </form>
         `;
@@ -315,6 +344,7 @@ export async function renderPlanScreen(container, db) {
 
             ${forecastHtml}
             ${settingsHtml}
+            ${transferHtml}
 
             ${goalPlans.length > 0 ? `
               <div class="goal-plans-container">
@@ -344,26 +374,29 @@ export async function renderPlanScreen(container, db) {
             ` : ''}
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
-              <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 40%;">⚙️ Настройки</button>
+              <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%;">⚙️</button>
               
               ${goal.deadlineMonth && balance < target ? `
-                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex: 1 1 50%;">
-                  ✨ ${goalPlans.length > 0 ? 'Пересчитать план' : 'Автоплан'}
+                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex: 1 1 40%;">
+                  ✨ Автоплан
                 </button>
               ` : ''}
               
-              <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 100%;">+ Свой план</button>
+              <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 20%;">+ План</button>
+            </div>
+
+            <div style="display: flex; gap: 8px; margin-top: 4px;">
+              <form class="add-contrib-form" data-goal-id="${goal.id}" style="flex: 1;">
+                <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
+                <button type="submit" class="btn btn-small" title="Внести факт">+</button>
+              </form>
+              <button type="button" class="btn btn-small btn-outline" data-action="open-transfer" data-goal-id="${goal.id}" style="flex-shrink: 0; color: var(--accent); border-color: var(--accent);">В пул</button>
             </div>
 
             <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
               <input type="month" class="m-month" required value="${calcStartMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
               <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
               <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
-            </form>
-
-            <form class="add-contrib-form" data-goal-id="${goal.id}">
-              <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
-              <button type="submit" class="btn btn-small" title="Внести факт">+</button>
             </form>
 
             <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
@@ -432,6 +465,105 @@ export async function renderPlanScreen(container, db) {
     });
   }
 
+  // Перевод из ПУЛА в ЦЕЛЬ
+  const btnOpenPoolTransfer = document.getElementById('btn-open-pool-transfer');
+  if (btnOpenPoolTransfer) {
+    btnOpenPoolTransfer.addEventListener('click', () => {
+      isPoolTransferOpen = true;
+      renderPlanScreen(container, db);
+    });
+  }
+
+  const btnCancelPoolTransfer = document.getElementById('btn-cancel-pool-transfer');
+  if (btnCancelPoolTransfer) {
+    btnCancelPoolTransfer.addEventListener('click', () => {
+      isPoolTransferOpen = false;
+      renderPlanScreen(container, db);
+    });
+  }
+
+  const poolTransferForm = document.getElementById('pool-transfer-form');
+  if (poolTransferForm) {
+    poolTransferForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const goalId = document.getElementById('transfer-target-goal').value;
+      const amountRub = parseFloat(document.getElementById('transfer-from-pool-amount').value);
+      if (!goalId || isNaN(amountRub) || amountRub <= 0) return;
+
+      const cmd = {
+        commandId: generateId(),
+        commandType: 'money.transfer',
+        payload: {
+          from: { type: 'pool', id: 'main' },
+          to: { type: 'goal', id: goalId },
+          amountMinor: Math.round(amountRub * 100),
+          actualDate: currentDate,
+          movementType: 'poolToGoal'
+        },
+        registeredAt: new Date().toISOString()
+      };
+
+      try {
+        const btn = poolTransferForm.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = '...';
+        await executeCommand(db, cmd);
+        isPoolTransferOpen = false;
+        forecastCache.clear();
+        await renderPlanScreen(container, db);
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      }
+    });
+  }
+
+  // Перевод из ЦЕЛИ в ПУЛ
+  container.querySelectorAll('[data-action="open-transfer"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openTransferGoalId = btn.dataset.goalId;
+      renderPlanScreen(container, db);
+    });
+  });
+
+  container.querySelectorAll('[data-action="cancel-transfer"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openTransferGoalId = null;
+      renderPlanScreen(container, db);
+    });
+  });
+
+  container.querySelectorAll('.goal-transfer-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const goalId = form.dataset.goalId;
+      const amountRub = parseFloat(form.querySelector('.transfer-to-pool-amount').value);
+      if (isNaN(amountRub) || amountRub <= 0) return;
+
+      const cmd = {
+        commandId: generateId(),
+        commandType: 'money.transfer',
+        payload: {
+          from: { type: 'goal', id: goalId },
+          to: { type: 'pool', id: 'main' },
+          amountMinor: Math.round(amountRub * 100),
+          actualDate: currentDate,
+          movementType: 'goalToPool'
+        },
+        registeredAt: new Date().toISOString()
+      };
+
+      try {
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true; btn.textContent = '...';
+        await executeCommand(db, cmd);
+        openTransferGoalId = null;
+        forecastCache.clear();
+        await renderPlanScreen(container, db);
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      }
+    });
+  });
+
   container.querySelectorAll('.filter-tab').forEach(btn => {
     btn.addEventListener('click', () => {
       currentFilter = btn.dataset.filter;
@@ -451,6 +583,7 @@ export async function renderPlanScreen(container, db) {
   container.querySelectorAll('[data-action="open-settings"]').forEach(btn => {
     btn.addEventListener('click', () => {
       openSettingsGoalId = btn.dataset.goalId;
+      openTransferGoalId = null;
       renderPlanScreen(container, db);
     });
   });
@@ -517,7 +650,6 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
-  // Обработчик создания цели (расширенный)
   document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
@@ -525,7 +657,6 @@ export async function renderPlanScreen(container, db) {
     const category = document.getElementById('goal-category').value;
     const deadlineMonth = document.getElementById('goal-deadline').value || null;
     
-    // Дополнительные поля
     const startMonth = document.getElementById('goal-startMonth').value || currentMonth;
     const annualRateVal = document.getElementById('goal-annualRate').value;
     const inflationVal = document.getElementById('goal-inflation').value;
