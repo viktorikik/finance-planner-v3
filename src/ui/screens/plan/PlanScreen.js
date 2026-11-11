@@ -131,9 +131,10 @@ export async function renderPlanScreen(container, db) {
       const target = goal.targetAmountMinor;
       const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
       
+      // ЗАЩИТА: отфильтровываем операции без plannedMonth
       const goalPlans = allPlannedOps
-        .filter(op => op.goalId === goal.id && op.state === 'scheduled')
-        .sort((a, b) => a.plannedMonth.localeCompare(b.plannedMonth));
+        .filter(op => op.goalId === goal.id && op.state === 'scheduled' && op.plannedMonth)
+        .sort((a, b) => (a.plannedMonth || '').localeCompare(b.plannedMonth || ''));
 
       const isExpanded = !collapsedGoals.has(goal.id);
       const isPlansExpanded = expandedPlans.has(goal.id);
