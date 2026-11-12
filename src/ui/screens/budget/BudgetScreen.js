@@ -17,7 +17,6 @@ export async function renderBudgetScreen(container, db) {
   let currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   let isYearlyViewVisible = false;
 
-  // Кеш категорий — заполняется в render()
   let allCategories = [];
   let categoriesMeta = {};
 
@@ -39,7 +38,6 @@ export async function renderBudgetScreen(container, db) {
       return;
     }
 
-    // Строим справочник для аналитики
     categoriesMeta = {};
     for (const cat of allCategories) {
       categoriesMeta[cat.id] = { name: cat.name, color: cat.color, emoji: cat.emoji };
@@ -50,7 +48,6 @@ export async function renderBudgetScreen(container, db) {
     const { plan, factIncomes, factExpenses, totalFactIncome, totalFactExpense } = execution;
     const analytics = calculateCategoryAnalytics(currentMonth, state, categoriesMeta);
 
-    // Годовой прогноз
     let yearlyHtml = '';
     if (isYearlyViewVisible) {
       const yearlyData = calculateYearlyBudget(currentMonth, state);
@@ -107,7 +104,6 @@ export async function renderBudgetScreen(container, db) {
       `;
     }
 
-    // Сводка План/Факт
     const factBalance = totalFactIncome - totalFactExpense;
     const isFactNegative = factBalance < 0;
 
@@ -138,7 +134,6 @@ export async function renderBudgetScreen(container, db) {
       </div>
     `;
 
-    // Аналитика по категориям
     let analyticsHtml = '';
     if (analytics.categories.length > 0) {
       const sourceLabel = analytics.source === 'fact' ? 'по фактическим тратам' : 'по плану (фактов пока нет)';
@@ -167,11 +162,9 @@ export async function renderBudgetScreen(container, db) {
       `;
     }
 
+    // ИСПРАВЛЕНО: Убрана кнопка "Назад", оставлен только заголовок
     container.innerHTML = `
-      <div style="display:flex; align-items:center; margin-bottom: 16px; gap: 12px;">
-        <button class="btn-icon" onclick="window.location.hash='/plan'" style="font-size: 24px; color: var(--text);">←</button>
-        <h2 style="margin: 0; font-size: 20px;">Бюджет</h2>
-      </div>
+      <h2 style="margin: 0 0 16px 0; font-size: 20px;">Бюджет</h2>
 
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -354,7 +347,6 @@ export async function renderBudgetScreen(container, db) {
     `).join('');
   }
 
-  // Возвращает категории для <select>: только активные, нужного типа
   function getCategoriesForType(type) {
     return allCategories
       .filter(c => c.type === type && !c.isArchived)
