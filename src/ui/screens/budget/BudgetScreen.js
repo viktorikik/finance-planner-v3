@@ -168,6 +168,14 @@ export async function renderBudgetScreen(container, db) {
       `;
     }
 
+    // Собираем ID всех планов, которые отрисованы на экране
+    const activePlanIds = new Set([
+      ...plan.incomes, 
+      ...plan.expenses, 
+      ...plan.inactiveIncomes, 
+      ...plan.inactiveExpenses
+    ].map(t => t.id));
+
     container.innerHTML = `
       <h2 style="margin: 0 0 16px 0; font-size: 20px;">Бюджет</h2>
 
@@ -205,7 +213,7 @@ export async function renderBudgetScreen(container, db) {
 
       <div class="card">
         <h2>Фактические операции (без плана)</h2>
-        ${renderStandaloneFacts(factIncomes, factExpenses)}
+        ${renderStandaloneFacts(factIncomes, factExpenses, activePlanIds)}
       </div>
 
       <div class="modal-overlay" id="form-modal">
@@ -213,7 +221,6 @@ export async function renderBudgetScreen(container, db) {
       </div>
     `;
 
-    // Инициализируем свайпы
     initSwipe(container);
 
     document.getElementById('budget-month-picker').addEventListener('change', (e) => {
@@ -280,7 +287,6 @@ export async function renderBudgetScreen(container, db) {
     });
   }
 
-  // === ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ СВАЙПА И УДАЛЕНИЯ ===
   function initSwipe(container) {
     container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
       const item = wrapper.querySelector('.swipe-item');
@@ -291,7 +297,6 @@ export async function renderBudgetScreen(container, db) {
       const threshold = 40;
       const openDistance = -80;
 
-      // Обработчик клика по кнопке удаления (для свайпа)
       const deleteBtn = wrapper.querySelector('.swipe-action');
       if (deleteBtn) {
         deleteBtn.addEventListener('click', async (e) => {
@@ -309,7 +314,6 @@ export async function renderBudgetScreen(container, db) {
         });
       }
 
-      // Обработчик кнопки удаления для десктопа (внутри карточки)
       const desktopDelete = wrapper.querySelector('.desktop-delete');
       if (desktopDelete) {
         desktopDelete.addEventListener('click', async (e) => {
@@ -327,7 +331,6 @@ export async function renderBudgetScreen(container, db) {
         });
       }
 
-      // Сенсорные события
       item.addEventListener('touchstart', (e) => {
         startX = e.touches[0].clientX;
         isDragging = true;
@@ -364,7 +367,6 @@ export async function renderBudgetScreen(container, db) {
         }
       });
 
-      // Закрываем свайп при клике в любом другом месте
       document.addEventListener('click', (e) => {
         if (!wrapper.contains(e.target) && isOpen) {
           item.style.transform = 'translateX(0)';
@@ -421,7 +423,6 @@ export async function renderBudgetScreen(container, db) {
                       <span style="display:flex; gap:8px; align-items:center;">
                         <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
                         <button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
-                        <button class="btn-icon swipe-delete-fact" data-id="${f.id}" style="display:none;"></button>
                       </span>
                     </div>
                   `).join('')}
@@ -434,8 +435,9 @@ export async function renderBudgetScreen(container, db) {
     `;
   }
 
-  function renderStandaloneFacts(factsIn, factsEx) {
-    const standalone = [...factsIn, ...factsEx].filter(f => !f.plannedTransactionId);
+  function renderStandaloneFacts(factsIn, factsEx, activePlanIds) {
+    // Показываем факты, у которых нет плана ИЛИ план не отображается на этом экране
+    const standalone = [...factsIn, ...factsEx].filter(f => !f.plannedTransactionId || !activePlanIds.has(f.plannedTransactionId));
     if (!standalone.length) return '<p class="muted">Нет внеплановых фактов.</p>';
 
     return standalone.map(f => `
