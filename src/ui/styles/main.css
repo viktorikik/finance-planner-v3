@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Планировщик финансов v3 — стили.
+   Планировщик финансов v4 — стили.
    ========================================================================== */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -83,17 +83,11 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .btn-icon.achieve { color: var(--green); }
 .btn-icon.achieve:hover { background: rgba(61, 220, 151, 0.1); }
 
-.filter-tabs {
-  display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border);
-  border-radius: 12px; padding: 4px;
-}
-.filter-tab {
-  flex: 1; padding: 8px; border: none; background: transparent; color: var(--muted);
-  font-family: inherit; font-weight: 600; font-size: 13px; cursor: pointer; border-radius: 8px;
-  transition: all 0.15s;
-}
+.filter-tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
+.filter-tab { flex: 1; padding: 8px; border: none; background: transparent; color: var(--muted); font-family: inherit; font-weight: 600; font-size: 13px; cursor: pointer; border-radius: 8px; transition: all 0.15s; }
 .filter-tab.active { background: var(--border); color: var(--text); }
 
+/* Список целей */
 .goal-item { background: var(--card-2); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; border: 1px solid transparent; }
 .goal-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
 .goal-header strong { font-size: 16px; }
@@ -102,17 +96,98 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .goal-body { display: flex; flex-direction: column; }
 .goal-progress { font-size: 13px; color: var(--muted); margin-bottom: 8px; text-align: right; }
 .percent { color: var(--accent); font-weight: 600; }
-.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
 .progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
 
-.goal-plans-container { background: rgba(15, 17, 23, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 4px; }
-.plans-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; }
-.plans-list { display: flex; flex-direction: column; gap: 4px; }
-.plan-row { display: flex; justify-content: space-between; align-items: center; font-size: 14px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-.plan-row:last-child { border-bottom: none; }
-.plan-row span { color: var(--muted); flex: 1; }
-.plan-row b { color: var(--text); margin-right: 12px; }
+/* Единый блок деталей (Прогноз + График) */
+.goal-details-container {
+  background: rgba(15, 17, 23, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
+.forecast-box {
+  background: rgba(124, 92, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.forecast-row { display: flex; justify-content: space-between; }
+
+/* Блок графика */
+.schedule-block {
+  display: flex;
+  flex-direction: column;
+}
+.schedule-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.schedule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.schedule-row {
+  display: grid;
+  grid-template-columns: 60px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+}
+.schedule-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.schedule-date {
+  display: flex;
+  flex-direction: column;
+  font-weight: 600;
+  font-size: 14px;
+  text-transform: capitalize;
+}
+.schedule-details {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.schedule-total {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.schedule-total span {
+  font-weight: 700;
+  font-size: 15px;
+  white-space: nowrap;
+}
+.schedule-total button {
+  color: var(--muted);
+  font-size: 20px;
+  padding: 0 4px;
+  display: flex;
+  align-items: center;
+  height: 24px;
+}
+
+/* Кнопки действий */
 .goal-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .goal-actions-grid > *:only-child { grid-column: span 2; }
 .auto-plan-btn { background: rgba(255, 200, 87, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
@@ -164,28 +239,91 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .form-group label { font-size: 13px; color: var(--muted); }
 .form-group input, .form-group select { padding: 10px 12px; font-size: 14px; background: var(--card-2); }
 
-.yearly-table { display: flex; flex-direction: column; gap: 2px; width: 100%; overflow: hidden; }
-.yearly-header, .yearly-row {
-  display: grid; grid-template-columns: 72px 1fr 1fr 96px; align-items: center; gap: 8px;
-  padding: 8px 10px; border-radius: 8px; font-size: 13px; font-variant-numeric: tabular-nums;
+/* ==========================================================================
+   Таблица годового прогноза (Шаг D) — Обновленная мобильная версия
+   ========================================================================== */
+.yearly-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  overflow: hidden;
 }
-.yearly-header { background: var(--card-2); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 10px; margin-bottom: 4px; }
-.yearly-header span, .yearly-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.yearly-row { background: var(--card); border: 1px solid var(--border); cursor: pointer; transition: background 0.15s, border-color 0.15s; }
-.yearly-row:hover { background: var(--card-2); border-color: var(--accent); }
-.yearly-row-negative { background: rgba(255, 92, 124, 0.08); border-color: rgba(255, 92, 124, 0.3); }
-.yearly-row-negative:hover { background: rgba(255, 92, 124, 0.15); }
-.yearly-month { font-weight: 600; text-transform: capitalize; color: var(--text); }
-.yearly-income { color: var(--green); text-align: right; }
-.yearly-expense { color: var(--red); text-align: right; }
-.yearly-balance { text-align: right; font-weight: 700; }
-.yearly-total-row { margin-top: 6px; background: var(--card-2); border: 1px solid var(--border); font-weight: 700; cursor: default; }
-.yearly-total-row:hover { background: var(--card-2); border-color: var(--border); }
-.yearly-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
 
-@media (max-width: 380px) {
-  .yearly-header, .yearly-row { grid-template-columns: 56px 1fr 1fr 80px; font-size: 12px; padding: 6px 8px; gap: 4px; }
-  .yearly-header { font-size: 10px; }
+.yearly-header {
+  display: none;
+}
+
+.yearly-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.yearly-row:hover {
+  background: var(--card-2);
+  border-color: var(--accent);
+}
+
+.yearly-row-negative {
+  background: rgba(255, 92, 124, 0.08);
+  border-color: rgba(255, 92, 124, 0.3);
+}
+
+.yearly-row-negative:hover {
+  background: rgba(255, 92, 124, 0.15);
+}
+
+.yearly-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.yearly-month {
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.yearly-balance {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.yearly-row-bottom {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.yearly-income {
+  color: var(--green);
+}
+
+.yearly-expense {
+  color: var(--red);
+}
+
+.yearly-total-row {
+  margin-top: 8px;
+  background: var(--card-2);
+  border: 2px solid var(--accent);
+  font-weight: 700;
+  cursor: default;
+}
+
+.yearly-total-row:hover {
+  background: var(--card-2);
+  border-color: var(--accent);
 }
 
 /* ==========================================================================
@@ -301,9 +439,6 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .category-actions button { background: transparent; border: none; cursor: pointer; padding: 4px; font-size: 14px; border-radius: 6px; transition: all 0.15s; color: var(--muted); }
 .category-actions button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
 
-
-/* ... (все предыдущие стили остаются без изменений) ... */
-
 /* ==========================================================================
    SWIPE TO DELETE (Удаление свайпом)
    ========================================================================== */
@@ -338,105 +473,15 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
   cursor: pointer;
 }
 
-/* Скрываем иконку удаления на мобильных (где работает свайп) */
 .desktop-delete {
   display: none;
 }
 
-/* Показываем иконку удаления только на устройствах с мышью */
 @media (hover: hover) and (pointer: fine) {
   .desktop-delete {
     display: flex !important;
   }
   .swipe-action {
-    display: none; /* На десктопе свайп не нужен */
+    display: none;
   }
-}
-
-
-/* ==========================================================================
-   Таблица годового прогноза (Шаг D) — Обновленная мобильная версия
-   ========================================================================== */
-.yearly-table {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  overflow: hidden;
-}
-
-.yearly-header {
-  display: none; /* Скрываем заголовки на мобильных, так как они теперь встроены в строки */
-}
-
-.yearly-row {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.yearly-row:hover {
-  background: var(--card-2);
-  border-color: var(--accent);
-}
-
-.yearly-row-negative {
-  background: rgba(255, 92, 124, 0.08);
-  border-color: rgba(255, 92, 124, 0.3);
-}
-
-.yearly-row-negative:hover {
-  background: rgba(255, 92, 124, 0.15);
-}
-
-.yearly-row-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.yearly-month {
-  font-weight: 600;
-  text-transform: capitalize;
-  color: var(--text);
-  font-size: 15px;
-}
-
-.yearly-balance {
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.yearly-row-bottom {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.yearly-income {
-  color: var(--green);
-}
-
-.yearly-expense {
-  color: var(--red);
-}
-
-.yearly-total-row {
-  margin-top: 8px;
-  background: var(--card-2);
-  border: 2px solid var(--accent);
-  font-weight: 700;
-  cursor: default;
-}
-
-.yearly-total-row:hover {
-  background: var(--card-2);
-  border-color: var(--accent);
 }
