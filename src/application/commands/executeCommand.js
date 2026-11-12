@@ -55,7 +55,7 @@ export async function executeCommand(db, command) {
   }
 
   if (commandType.startsWith('plannedTransaction.')) {
-    stores.push('plannedTransactions');
+    stores.push('plannedTransactions', 'actualTransactions'); 
   }
 
   if (commandType.startsWith('actualTransaction.')) {
@@ -70,10 +70,12 @@ export async function executeCommand(db, command) {
     stores.push('settings');
   }
 
-  // Для команд очистки открываем ВООБЩЕ ВСЕ таблицы
   if (commandType === 'data.clearFinancials' || commandType === 'data.factoryReset') {
     stores = [...new Set([...stores, ...Object.keys(STORES)])];
   }
+
+  // Защита от дублирования таблиц в транзакции
+  stores = [...new Set(stores)];
 
   const tx = db.transaction(stores, 'readwrite');
 
@@ -105,7 +107,6 @@ export async function executeCommand(db, command) {
     }
 
     switch (commandType) {
-      // --- СУЩЕСТВУЮЩИЕ КОМАНДЫ ---
       case 'contribution.create':
         plan = planContribution(payload);
         break;
@@ -220,6 +221,11 @@ export async function executeCommand(db, command) {
         plan = planPlannedTransactionUpdate(payload, existingTx);
         break;
       case 'plannedTransaction.delete':
+        const allFactsToUnlink = await getAllFromStore('actualTransactions', tx);
+        const linkedFacts = allFactsToUnlink.filter(f => f.plannedTransactionId === payload.id);
+        for (const fact of linkedFacts) {
+          await putIntoStore('actualTransactions', { ...fact, plannedTransactionId: null }, tx);
+        }
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('plannedTransactions').delete(payload.id);
           req.onsuccess = resolve; req.onerror = () => reject(req.error);
@@ -235,7 +241,6 @@ export async function executeCommand(db, command) {
         });
         break;
 
-      // --- НОВЫЕ КОМАНДЫ (Настройки и Категории) ---
       case 'settings.update':
         const newSetting = planSettingsUpdate(payload.id, payload.value);
         plan.newSettings.push(newSetting);
@@ -262,7 +267,6 @@ export async function executeCommand(db, command) {
         });
         break;
 
-      // --- ОПАСНАЯ ЗОНА (Очистка данных) ---
       case 'data.clearFinancials': {
         const financialStores = [
           'goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions',
@@ -279,7 +283,6 @@ export async function executeCommand(db, command) {
       }
       
       case 'data.factoryReset': {
-        // Очищаем ВООБЩЕ ВСЕ, кроме processedCommands (чтобы записать текущую команду)
         const allStores = Object.keys(STORES).filter(s => s !== 'processedCommands');
         for (const store of allStores) {
           await new Promise((resolve, reject) => {
@@ -288,8 +291,6 @@ export async function executeCommand(db, command) {
           });
         }
         
-        // Восстанавливаем дефолтные категории и настройки прямо здесь
-        // Импортируем их динамически или передаем в payload (для чистоты, лучше импортировать сверху)
         const { planCategoriesSeed, planSettingsSeed } = await import('../../infrastructure/migration/migrateV12toV13.js');
         const defaultCats = planCategoriesSeed();
         for (const cat of defaultCats) await putIntoStore('categories', cat, tx);
