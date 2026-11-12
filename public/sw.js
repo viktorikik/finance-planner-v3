@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v62';
+const CACHE_VERSION = 'v63';
 const CACHE_NAME = `finance-planner-${CACHE_VERSION}`;
 
 const APP_SHELL = [
@@ -20,7 +20,9 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) return caches.delete(cacheName);
+          if (cacheName !== CACHE_NAME) {
+            return caches.delete(cacheName);
+          }
         })
       );
     })
@@ -43,20 +45,26 @@ self.addEventListener('fetch', (event) => {
             return networkResponse;
           });
         })
-        .catch(() => caches.match(event.request))
+        .catch(() => {
+          return caches.match(event.request);
+        })
     );
     return;
   }
 
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) return cachedResponse;
+      if (cachedResponse) {
+        return cachedResponse;
+      }
       return fetch(event.request).then((networkResponse) => {
         return caches.open(CACHE_NAME).then((cache) => {
           cache.put(event.request, networkResponse.clone());
           return networkResponse;
         });
       });
-    }).catch(() => caches.match('./index.html'))
+    }).catch(() => {
+      return caches.match('./index.html');
+    })
   );
 });
