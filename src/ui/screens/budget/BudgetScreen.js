@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «Бюджет». Управление доходами, расходами и фактом + Годовой прогноз
-   + Аналитика по категориям.
+   + Аналитика по категориям (из БД).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -17,27 +17,38 @@ export async function renderBudgetScreen(container, db) {
   let currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   let isYearlyViewVisible = false;
 
+  // Кеш категорий — заполняется в render()
+  let allCategories = [];
+  let categoriesMeta = {};
+
   async function render() {
     container.innerHTML = '<div class="loading">Загрузка бюджета...</div>';
 
     let goals = [], plannedOperations = [], plannedTransactions = [], actualTransactions = [];
 
     try {
-      const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions'], 'readonly');
+      const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions', 'categories'], 'readonly');
       goals = await getAllFromStore('goals', tx);
       plannedOperations = await getAllFromStore('plannedOperations', tx);
       plannedTransactions = await getAllFromStore('plannedTransactions', tx);
       actualTransactions = await getAllFromStore('actualTransactions', tx);
+      allCategories = await getAllFromStore('categories', tx);
     } catch (err) {
       console.warn('[BudgetScreen] Ошибка загрузки:', err);
       container.innerHTML = `<div class="card"><p class="muted">Ошибка загрузки базы данных. Обновите страницу.</p></div>`;
       return;
     }
 
+    // Строим справочник для аналитики
+    categoriesMeta = {};
+    for (const cat of allCategories) {
+      categoriesMeta[cat.id] = { name: cat.name, color: cat.color, emoji: cat.emoji };
+    }
+
     const state = { goals, plannedOperations, plannedTransactions, actualTransactions };
     const execution = calculateBudgetExecution(currentMonth, state);
     const { plan, factIncomes, factExpenses, totalFactIncome, totalFactExpense } = execution;
-    const analytics = calculateCategoryAnalytics(currentMonth, state);
+    const analytics = calculateCategoryAnalytics(currentMonth, state, categoriesMeta);
 
     // Годовой прогноз
     let yearlyHtml = '';
@@ -99,7 +110,7 @@ export async function renderBudgetScreen(container, db) {
     // Сводка План/Факт
     const factBalance = totalFactIncome - totalFactExpense;
     const isFactNegative = factBalance < 0;
-    
+
     let summaryHtml = `
       <div class="budget-summary" style="background:var(--card-2); padding:16px; border-radius:12px; margin-bottom:16px;">
         <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:4px;">
@@ -107,19 +118,19 @@ export async function renderBudgetScreen(container, db) {
           <span>План / <b>Факт</b></span>
         </div>
         <div class="summary-row">
-          <span class="muted">Доходы:</span> 
+          <span class="muted">Доходы:</span>
           <span>+${formatMoney(plan.totalIncome)} / <b style="color:var(--green)">+${formatMoney(totalFactIncome)}</b></span>
         </div>
         <div class="summary-row">
-          <span class="muted">Расходы:</span> 
+          <span class="muted">Расходы:</span>
           <span>-${formatMoney(plan.totalExpense)} / <b style="color:var(--red)">-${formatMoney(totalFactExpense)}</b></span>
         </div>
         <div class="summary-row">
-          <span class="muted">Взносы в цели:</span> 
+          <span class="muted">Взносы в цели:</span>
           <span>-${formatMoney(plan.totalContribution)}</span>
         </div>
         <div class="summary-row" style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-weight:bold;">
-          <span>Фактический остаток:</span> 
+          <span>Фактический остаток:</span>
           <span style="color: ${isFactNegative ? 'var(--red)' : 'var(--green)'}">
             ${formatMoney(factBalance)} ₽
           </span>
@@ -135,11 +146,11 @@ export async function renderBudgetScreen(container, db) {
         <div class="card" style="margin-top: 16px;">
           <h2 style="margin-bottom: 4px;">Куда уходят деньги</h2>
           <p style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">${sourceLabel}</p>
-          
+
           ${analytics.categories.map(cat => `
             <div style="margin-bottom: 14px;">
               <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
-                <span style="font-weight:600; color:${cat.color};">${cat.name}</span>
+                <span style="font-weight:600; color:${cat.color};">${cat.emoji || ''} ${cat.name}</span>
                 <span style="color:var(--muted);">${formatMoney(cat.amountMinor)} ₽ · ${cat.percent.toFixed(0)}%</span>
               </div>
               <div style="height:8px; background:var(--border); border-radius:4px; overflow:hidden;">
@@ -178,7 +189,7 @@ export async function renderBudgetScreen(container, db) {
           <button class="btn" id="btn-add-fact-income" style="background:var(--green); color:#000;">+ Факт доход</button>
           <button class="btn" id="btn-add-fact-expense" style="background:var(--red);">+ Факт расход</button>
         </div>
-        
+
         <button class="btn btn-text" id="btn-toggle-yearly" style="width: 100%; margin-top: 8px; border: 1px dashed var(--border); padding: 10px;">
           ${isYearlyViewVisible ? 'Скрыть прогноз на год' : '📅 Показать прогноз на 12 месяцев'}
         </button>
@@ -272,17 +283,17 @@ export async function renderBudgetScreen(container, db) {
   function renderTransactionsList(activeItems, inactiveItems, title, type, allFactItems) {
     const allItems = [...activeItems, ...inactiveItems];
     if (!allItems.length) return '';
-    
+
     return `
       <div style="margin-bottom: 16px;">
         <h3 style="font-size:14px; color:var(--muted); margin-bottom:8px;">${title}</h3>
         ${allItems.map(tx => {
           const isInactive = tx.isActive === false;
           const dateInfo = tx.dayOfMonth ? `${tx.dayOfMonth}-е число` : (tx.date ? new Date(tx.date).toLocaleDateString('ru-RU') : 'Без даты');
-          
+
           const linkedFacts = allFactItems.filter(f => f.plannedTransactionId === tx.id);
           const totalLinkedFact = linkedFacts.reduce((sum, f) => sum + f.amountMinor, 0);
-          
+
           return `
           <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'}; margin-bottom: 12px;">
             <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -303,7 +314,7 @@ export async function renderBudgetScreen(container, db) {
                 </div>
               </div>
             </div>
-            
+
             ${linkedFacts.length > 0 ? `
               <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
                 ${linkedFacts.map(f => `
@@ -343,10 +354,17 @@ export async function renderBudgetScreen(container, db) {
     `).join('');
   }
 
+  // Возвращает категории для <select>: только активные, нужного типа
+  function getCategoriesForType(type) {
+    return allCategories
+      .filter(c => c.type === type && !c.isArchived)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
   function showPlannedForm(type, existingTx = null) {
     const formContainer = document.getElementById('tx-form-container');
     const isIncome = type === 'income';
-    
+
     const titleVal = existingTx ? existingTx.title : '';
     const amountVal = existingTx ? existingTx.amountMinor / 100 : '';
     const freqVal = existingTx ? existingTx.frequency : 'regular';
@@ -354,20 +372,9 @@ export async function renderBudgetScreen(container, db) {
     const endMonthVal = existingTx && existingTx.endMonth ? existingTx.endMonth : '';
     const dayOfMonthVal = existingTx && existingTx.dayOfMonth ? existingTx.dayOfMonth : '';
     const dateVal = existingTx && existingTx.date ? existingTx.date : '';
-    const categoryVal = existingTx && existingTx.category ? existingTx.category : 'other';
+    const categoryVal = existingTx && existingTx.category ? existingTx.category : '';
 
-    const categories = [
-      { value: 'food', label: 'Еда' },
-      { value: 'housing', label: 'Жилье' },
-      { value: 'transport', label: 'Транспорт' },
-      { value: 'entertainment', label: 'Развлечения' },
-      { value: 'health', label: 'Здоровье' },
-      { value: 'education', label: 'Образование' },
-      { value: 'salary', label: 'Зарплата' },
-      { value: 'freelance', label: 'Фриланс' },
-      { value: 'gift', label: 'Подарки' },
-      { value: 'other', label: 'Другое' },
-    ];
+    const categories = getCategoriesForType(type);
 
     formContainer.innerHTML = `
       <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}">
@@ -375,9 +382,9 @@ export async function renderBudgetScreen(container, db) {
         <form id="tx-form" class="create-goal-form">
           <input type="text" id="tx-title" placeholder="Название" value="${titleVal}" required>
           <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" value="${amountVal}" required min="1" step="0.01">
-          
+
           <select id="tx-category">
-            ${categories.map(c => `<option value="${c.value}" ${categoryVal === c.value ? 'selected' : ''}>${c.label}</option>`).join('')}
+            ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
           </select>
 
           <div class="form-row-bottom">
@@ -415,7 +422,7 @@ export async function renderBudgetScreen(container, db) {
     const freqSelect = document.getElementById('tx-frequency');
     const regFields = document.getElementById('regular-fields');
     const oneTimeFields = document.getElementById('one-time-fields');
-    
+
     freqSelect.addEventListener('change', (e) => {
       const isReg = e.target.value === 'regular';
       regFields.style.display = isReg ? 'flex' : 'none';
@@ -431,7 +438,7 @@ export async function renderBudgetScreen(container, db) {
       const frequency = freqSelect.value;
       const startMonth = document.getElementById('tx-start-month').value;
       const category = document.getElementById('tx-category').value;
-      
+
       const dayOfMonthVal = document.getElementById('tx-day-of-month').value;
       const endMonthVal = document.getElementById('tx-end-month').value;
       const dateVal = document.getElementById('tx-date').value;
@@ -469,20 +476,9 @@ export async function renderBudgetScreen(container, db) {
 
     const titleVal = plannedTx ? plannedTx.title : '';
     const amountVal = plannedTx ? plannedTx.amountMinor / 100 : '';
-    const categoryVal = plannedTx && plannedTx.category ? plannedTx.category : 'other';
+    const categoryVal = plannedTx && plannedTx.category ? plannedTx.category : '';
 
-    const categories = [
-      { value: 'food', label: 'Еда' },
-      { value: 'housing', label: 'Жилье' },
-      { value: 'transport', label: 'Транспорт' },
-      { value: 'entertainment', label: 'Развлечения' },
-      { value: 'health', label: 'Здоровье' },
-      { value: 'education', label: 'Образование' },
-      { value: 'salary', label: 'Зарплата' },
-      { value: 'freelance', label: 'Фриланс' },
-      { value: 'gift', label: 'Подарки' },
-      { value: 'other', label: 'Другое' },
-    ];
+    const categories = getCategoriesForType(type);
 
     formContainer.innerHTML = `
       <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}; box-shadow: 0 0 20px ${isIncome ? 'rgba(61,220,151,0.2)' : 'rgba(255,92,124,0.2)'};">
@@ -491,7 +487,7 @@ export async function renderBudgetScreen(container, db) {
           <input type="text" id="fact-title" placeholder="Название" value="${titleVal}" required>
           <input type="number" id="fact-amount" placeholder="Фактическая сумма (₽)" value="${amountVal}" required min="1" step="0.01">
           <select id="fact-category">
-            ${categories.map(c => `<option value="${c.value}" ${categoryVal === c.value ? 'selected' : ''}>${c.label}</option>`).join('')}
+            ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
           </select>
           <div class="form-group">
             <label>Дата фактической операции:</label>
@@ -516,10 +512,10 @@ export async function renderBudgetScreen(container, db) {
         await executeCommand(db, {
           commandId: generateId(),
           commandType: 'actualTransaction.create',
-          payload: { 
-            type, 
-            title, 
-            amountMinor, 
+          payload: {
+            type,
+            title,
+            amountMinor,
             actualDate,
             category,
             plannedTransactionId: plannedTx ? plannedTx.id : null
