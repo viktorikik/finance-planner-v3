@@ -2,16 +2,18 @@
    Исполнитель команд.
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
+import { STORES } from '../../infrastructure/database/dbSchema.js';
 import { planContribution } from '../../domain/money/contributions.js';
 import { planMoneyTransfer } from '../../domain/money/operations.js';
 import { planMovementReversal } from '../../domain/money/reversals.js';
-import { planGoalCreate } from '../../domain/planning/goals.js';
 import { planPlannedOperationCreate } from '../../domain/planning/plannedOperations.js';
 import { generatePlanForGoal } from '../../domain/planning/planGenerator.js';
 import { planActualIncomeCreate } from '../../domain/money/actualIncomes.js';
 import { planPlannedTransactionCreate, planPlannedTransactionUpdate } from '../../domain/budget/plannedTransactions.js';
 import { planActualTransactionCreate } from '../../domain/budget/actualTransactions.js';
-import { DuplicateCommandError } from '../../domain/shared/errors.js';
+import { planCategoryCreate, planCategoryUpdate, validateCategoryDeletion } from '../../domain/categories/categories.js';
+import { planSettingsUpdate } from '../../domain/settings/settings.js';
+import { DuplicateCommandError, CategoryNotFoundError, DataClearError } from '../../domain/shared/errors.js';
 import { calculateGoalBalance } from '../../domain/statistics/balances.js';
 import { calculatePositionBalance } from '../../domain/money/moneyPositions.js';
 import { generateId } from '../../domain/shared/ids.js';
@@ -60,6 +62,19 @@ export async function executeCommand(db, command) {
     stores.push('actualTransactions');
   }
 
+  if (commandType.startsWith('category.')) {
+    stores.push('categories', 'plannedTransactions', 'actualTransactions');
+  }
+
+  if (commandType === 'settings.update') {
+    stores.push('settings');
+  }
+
+  // Для команд очистки открываем ВООБЩЕ ВСЕ таблицы
+  if (commandType === 'data.clearFinancials' || commandType === 'data.factoryReset') {
+    stores = [...new Set([...stores, ...Object.keys(STORES)])];
+  }
+
   const tx = db.transaction(stores, 'readwrite');
 
   try {
@@ -69,7 +84,8 @@ export async function executeCommand(db, command) {
     let plan = { 
       newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
       newActualIncomes: [], updatedEntries: [], updatedMovements: [], 
-      newPlannedTransactions: [], newActualTransactions: []
+      newPlannedTransactions: [], newActualTransactions: [],
+      newCategories: [], newSettings: []
     };
     let state = null;
 
@@ -81,7 +97,15 @@ export async function executeCommand(db, command) {
       };
     }
 
+    if (commandType === 'category.delete') {
+      state = {
+        plannedTransactions: await getAllFromStore('plannedTransactions', tx),
+        actualTransactions: await getAllFromStore('actualTransactions', tx)
+      };
+    }
+
     switch (commandType) {
+      // --- СУЩЕСТВУЮЩИЕ КОМАНДЫ ---
       case 'contribution.create':
         plan = planContribution(payload);
         break;
@@ -94,12 +118,9 @@ export async function executeCommand(db, command) {
       case 'money.reverse':
         plan = planMovementReversal(payload.movementId, state);
         break;
-      
       case 'goal.create':
         const newGoal = {
-          id: generateId(),
-          status: 'active',
-          name: payload.name,
+          id: generateId(), status: 'active', name: payload.name,
           targetAmountMinor: Math.round(payload.targetAmountMinor),
           category: payload.category || 'long',
           startMonth: payload.startMonth || new Date().toISOString().slice(0, 7),
@@ -110,16 +131,13 @@ export async function executeCommand(db, command) {
           indexationRate: payload.indexationRate || 0,
           planMode: payload.planMode || 'auto',
           manualMonthlyAmountMinor: payload.manualMonthlyAmountMinor || null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
         };
         plan = { newGoals: [newGoal] };
         break;
-      
       case 'goal.updateSettings':
         const goalToUpdate = await getFromStore('goals', payload.goalId, tx);
         if (!goalToUpdate) throw new Error('Цель не найдена');
-        
         const updatedGoalSettings = {
           ...goalToUpdate,
           startMonth: payload.startMonth !== undefined ? payload.startMonth : goalToUpdate.startMonth,
@@ -134,11 +152,9 @@ export async function executeCommand(db, command) {
         };
         plan.newGoals.push(updatedGoalSettings);
         break;
-
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
         break;
-
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
         if (!goalForGen) throw new Error('Цель не найдена');
@@ -147,18 +163,15 @@ export async function executeCommand(db, command) {
         
         const settingsReq = tx.objectStore('settings').get('generalInflationRate');
         const generalInflationSetting = await new Promise((resolve) => {
-           settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : null);
-           settingsReq.onerror = () => resolve(null);
+           settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : 5);
+           settingsReq.onerror = () => resolve(5);
         });
-
         plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth, generalInflationSetting);
         break;
-
       case 'plannedOperation.delete':
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('plannedOperations').delete(payload.operationId);
-          req.onsuccess = resolve;
-          req.onerror = () => reject(req.error);
+          req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
       case 'plannedOperation.clearForGoal':
@@ -167,8 +180,7 @@ export async function executeCommand(db, command) {
         for (const op of opsToDelete) {
           await new Promise((resolve, reject) => {
             const req = tx.objectStore('plannedOperations').delete(op.id);
-            req.onsuccess = resolve;
-            req.onerror = () => reject(req.error);
+            req.onsuccess = resolve; req.onerror = () => reject(req.error);
           });
         }
         break;
@@ -196,40 +208,96 @@ export async function executeCommand(db, command) {
         }
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('goals').delete(payload.goalId);
-          req.onsuccess = resolve;
-          req.onerror = () => reject(req.error);
+          req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
-
       case 'plannedTransaction.create':
         plan = planPlannedTransactionCreate(payload);
         break;
-      
       case 'plannedTransaction.update':
         const existingTx = await getFromStore('plannedTransactions', payload.id, tx);
         if (!existingTx) throw new Error('Транзакция не найдена');
         plan = planPlannedTransactionUpdate(payload, existingTx);
         break;
-      
       case 'plannedTransaction.delete':
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('plannedTransactions').delete(payload.id);
-          req.onsuccess = resolve;
-          req.onerror = () => reject(req.error);
+          req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
-
       case 'actualTransaction.create':
         plan = planActualTransactionCreate(payload);
         break;
-
       case 'actualTransaction.delete':
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('actualTransactions').delete(payload.id);
-          req.onsuccess = resolve;
-          req.onerror = () => reject(req.error);
+          req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
+
+      // --- НОВЫЕ КОМАНДЫ (Настройки и Категории) ---
+      case 'settings.update':
+        const newSetting = planSettingsUpdate(payload.id, payload.value);
+        plan.newSettings.push(newSetting);
+        break;
+      
+      case 'category.create':
+        const newCat = planCategoryCreate(payload);
+        plan.newCategories.push(newCat);
+        break;
+      
+      case 'category.update':
+        const existingCat = await getFromStore('categories', payload.id, tx);
+        if (!existingCat) throw new CategoryNotFoundError();
+        plan.newCategories.push(planCategoryUpdate(existingCat, payload));
+        break;
+      
+      case 'category.delete':
+        const catToDelete = await getFromStore('categories', payload.id, tx);
+        if (!catToDelete) throw new CategoryNotFoundError();
+        validateCategoryDeletion(catToDelete, state);
+        await new Promise((resolve, reject) => {
+          const req = tx.objectStore('categories').delete(payload.id);
+          req.onsuccess = resolve; req.onerror = () => reject(req.error);
+        });
+        break;
+
+      // --- ОПАСНАЯ ЗОНА (Очистка данных) ---
+      case 'data.clearFinancials': {
+        const financialStores = [
+          'goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions',
+          'actualIncomes', 'actualContributions', 'initialContributions', 'investmentIncomes',
+          'moneyLots', 'moneyMovements', 'moneyEntries', 'pool', 'parameterHistory', 'auditLog'
+        ];
+        for (const store of financialStores) {
+          await new Promise((resolve, reject) => {
+            const req = tx.objectStore(store).clear();
+            req.onsuccess = resolve; req.onerror = () => reject(req.error);
+          });
+        }
+        break;
+      }
+      
+      case 'data.factoryReset': {
+        // Очищаем ВООБЩЕ ВСЕ, кроме processedCommands (чтобы записать текущую команду)
+        const allStores = Object.keys(STORES).filter(s => s !== 'processedCommands');
+        for (const store of allStores) {
+          await new Promise((resolve, reject) => {
+            const req = tx.objectStore(store).clear();
+            req.onsuccess = resolve; req.onerror = () => reject(req.error);
+          });
+        }
+        
+        // Восстанавливаем дефолтные категории и настройки прямо здесь
+        // Импортируем их динамически или передаем в payload (для чистоты, лучше импортировать сверху)
+        const { planCategoriesSeed, planSettingsSeed } = await import('../../infrastructure/migration/migrateV12toV13.js');
+        const defaultCats = planCategoriesSeed();
+        for (const cat of defaultCats) await putIntoStore('categories', cat, tx);
+        
+        const defaultSets = planSettingsSeed();
+        for (const set of defaultSets) await putIntoStore('settings', set, tx);
+        break;
+      }
 
       default:
         throw new Error(`Неизвестный тип: ${commandType}`);
@@ -252,6 +320,8 @@ export async function executeCommand(db, command) {
     await saveItems('plannedOperations', plan.newPlannedOperations);
     await saveItems('plannedTransactions', plan.newPlannedTransactions);
     await saveItems('actualTransactions', plan.newActualTransactions);
+    await saveItems('categories', plan.newCategories);
+    await saveItems('settings', plan.newSettings);
 
     await putIntoStore('processedCommands', {
       commandId, commandType, committedAt: new Date().toISOString(), resultHash: 'dummy-hash'
