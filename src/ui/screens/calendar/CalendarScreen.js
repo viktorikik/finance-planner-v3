@@ -209,7 +209,6 @@ export async function renderCalendarScreen(container, db) {
 
     let html = `<h3 style="font-size: 15px; margin-bottom: 12px;">${formatDateLong(state.selectedDate)}</h3>`;
 
-    /* --- БЛОК ПЛАНА --- */
     if (ev.planOps.length || ev.planIncomes.length || ev.planExpenses.length) {
       html += '<div class="day-section-title">План</div>';
       
@@ -266,7 +265,6 @@ export async function renderCalendarScreen(container, db) {
       }
     }
 
-    /* --- БЛОК ФАКТА --- */
     if (ev.factContribs.length || ev.factIncomes.length || ev.factExpenses.length) {
       html += '<div class="day-section-title" style="margin-top:16px;">Факт</div>';
       
@@ -280,7 +278,6 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-title">Взнос: ${goal ? escapeHtml(goal.name) : 'Цель удалена'}</div>
                 <div class="event-meta">${formatRub(c.amountMinor)} ₽ · ${typeLabel}</div>
               </div>
-              <!-- Удаление факта взноса делается через отмену, тут просто заглушка для UI -->
               <button class="btn-icon delete" data-action="reverse-contrib" data-id="${c.id}" title="Отменить взнос">${ICON_TRASH}</button>
             </div>
           </div>
@@ -399,7 +396,6 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Удаление плановых операций (цели)
     container.querySelectorAll('[data-action="delete-plan"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Удалить этот плановый взнос? (Внесенные факты останутся)')) return;
@@ -410,7 +406,6 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Удаление плановых транзакций (бюджет)
     container.querySelectorAll('[data-action="delete-plan-tx"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Удалить этот план? (Внесенные факты останутся)')) return;
@@ -421,7 +416,6 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Удаление фактических транзакций (бюджет)
     container.querySelectorAll('[data-action="delete-fact-tx"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Удалить эту запись? Бюджет и аналитика будут пересчитаны.')) return;
@@ -432,12 +426,9 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    // Отмена взноса в цель (если нужно реализовать)
     container.querySelectorAll('[data-action="reverse-contrib"]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Отменить этот взнос? Деньги вернутся в свободные.')) return;
-        // В текущей архитектуре отмена делается через money.reverse (movementId), 
-        // но пока оставим заглушку, чтобы не усложнять, если нет прямой связи.
         alert('Функция отмены взносов в разработке. Пока удалите через экран Плана.');
       });
     });
