@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Улучшена иерархия и визуальное разделение блоков.
+   Жесткая верстка графиков через inline flexbox для идеального вида.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -249,24 +249,36 @@ export async function renderPlanScreen(container, db) {
       const { reqContrib, fc, schedule: cachedSchedule } = forecastCache.get(cacheKey);
       schedule = cachedSchedule;
 
+      // Верстка прогноза (inline-flex)
       if (fc.status === 'projected') {
         forecastHtml = `
-          <div class="forecast-box">
-            <div class="forecast-row"><span>Дата достижения:</span> <b style="color:var(--green);">${fc.forecastDate}</b></div>
-            ${goal.category === 'long' ? `<div class="forecast-row"><span>Цель с инфляцией:</span> <b>${formatRub(fc.targetWithInflationMinor)} ₽</b></div>` : ''}
-            ${goal.planMode === 'auto' && reqContrib ? `<div class="forecast-row"><span>Необходимый взнос:</span> <b>${formatRub(reqContrib)} ₽/мес</b></div>` : ''}
-            ${goal.planMode === 'manual' && goal.manualMonthlyAmountMinor ? `<div class="forecast-row"><span>Ваш взнос:</span> <b>${formatRub(goal.manualMonthlyAmountMinor)} ₽/мес</b></div>` : ''}
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--muted);">Дата достижения:</span> <b style="color:var(--green);">${fc.forecastDate}</b>
+            </div>
+            ${goal.category === 'long' ? `
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--muted);">Цель с инфляцией:</span> <b style="color:var(--text);">${formatRub(fc.targetWithInflationMinor)} ₽</b>
+            </div>` : ''}
+            ${goal.planMode === 'auto' && reqContrib ? `
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--muted);">Необходимый взнос:</span> <b style="color:var(--text);">${formatRub(reqContrib)} ₽/мес</b>
+            </div>` : ''}
+            ${goal.planMode === 'manual' && goal.manualMonthlyAmountMinor ? `
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--muted);">Ваш взнос:</span> <b style="color:var(--text);">${formatRub(goal.manualMonthlyAmountMinor)} ₽/мес</b>
+            </div>` : ''}
           </div>
         `;
       } else if (fc.status === 'no_plan') {
-        forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Нет будущих взносов для расчета прогноза</div>`;
+        forecastHtml = `<div style="color:var(--muted); font-size:13px; text-align:center;">Нет будущих взносов для расчета прогноза</div>`;
       } else if (fc.status === 'insufficient_data') {
-        forecastHtml = `<div class="forecast-box muted" style="color:var(--muted); font-size:13px; text-align:center;">Укажите срок и настройки для прогноза</div>`;
+        forecastHtml = `<div style="color:var(--muted); font-size:13px; text-align:center;">Укажите срок и настройки для прогноза</div>`;
       } else if (fc.status === 'deadline_passed') {
         if (currentMonth <= goal.deadlineMonth) {
-           forecastHtml = `<div class="forecast-box" style="color:var(--yellow); font-size:13px; text-align:center;">Не хватает взносов, чтобы успеть к сроку</div>`;
+           forecastHtml = `<div style="color:var(--yellow); font-size:13px; text-align:center;">Не хватает взносов, чтобы успеть к сроку</div>`;
         } else {
-           forecastHtml = `<div class="forecast-box" style="color:var(--red); font-size:13px; text-align:center;">Срок прошел, цель не достигнута</div>`;
+           forecastHtml = `<div style="color:var(--red); font-size:13px; text-align:center;">Срок прошел, цель не достигнута</div>`;
         }
       }
 
@@ -346,45 +358,61 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
-      // НОВЫЙ БЛОК ГРАФИКА (ВНУТРИ ОБЩЕГО КОНТЕЙНЕРА ДЕТАЛЕЙ)
+      // Верстка графика (inline-flex, чтобы не зависеть от CSS)
       const visibleSchedule = isPlansExpanded ? schedule : schedule.slice(0, 3);
       const plansHtml = schedule.length > 0 ? `
-        <div class="schedule-block">
-          <div class="schedule-header">
-            <span>Детализация по месяцам</span>
-            <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red);">Очистить</button>
+        <div style="margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <span style="font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase;">Детализация по месяцам</span>
+            <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red); font-size: 12px;">Очистить</button>
           </div>
-          <div class="schedule-list ${isAmountHidden ? 'blurred' : ''}">
+          <div class="${isAmountHidden ? 'blurred' : ''}" style="display: flex; flex-direction: column;">
             ${visibleSchedule.map(row => {
               const [y, m] = row.month.split('-');
               const monthName = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'short' });
               const yearShort = y.slice(2);
               
               return `
-                <div class="schedule-row">
-                  <div class="schedule-date">
-                    <span>${monthName}</span>
-                    <span style="font-size: 10px; color: var(--muted);">'${yearShort}</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--border);">
+                  <!-- Дата -->
+                  <div style="flex: 0 0 45px;">
+                    <div style="font-weight: 600; font-size: 14px; text-transform: capitalize; color: var(--text);">${monthName}</div>
+                    <div style="font-size: 11px; color: var(--muted);">'${yearShort}</div>
                   </div>
-                  <div class="schedule-details">
-                    <span>Взнос: ${formatRub(row.contribution)} ₽</span>
-                    <span style="color: var(--green);">Проценты: +${formatRub(row.interest)} ₽</span>
+                  <!-- Детали -->
+                  <div style="flex: 1; display: flex; flex-direction: column; gap: 2px; margin-left: 8px;">
+                    <span style="font-size: 12px; color: var(--muted);">Взнос: ${formatRub(row.contribution)} ₽</span>
+                    <span style="font-size: 12px; color: var(--green);">Проценты: +${formatRub(row.interest)} ₽</span>
                   </div>
-                  <div class="schedule-total">
-                    <span>${formatRub(row.total)} ₽</span>
-                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}">×</button>` : '<span style="width: 20px;"></span>'}
+                  <!-- Итог + Кнопка -->
+                  <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
+                    <span style="font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--text);">${formatRub(row.total)} ₽</span>
+                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 18px; padding: 4px; line-height: 1;">×</button>` : '<span style="width: 26px; display: inline-block;"></span>'}
                   </div>
                 </div>
               `;
             }).join('')}
           </div>
           ${schedule.length > 3 ? `
-            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
+            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 12px;">
               ${isPlansExpanded ? 'Скрыть лишние' : `Показать все (${schedule.length})`}
             </button>
           ` : ''}
         </div>
       ` : '';
+
+      const hasForecast = forecastHtml !== '';
+      const hasSchedule = plansHtml !== '';
+
+      let detailsBlockHtml = '';
+      if (hasForecast || hasSchedule) {
+        detailsBlockHtml = `
+          <div style="background: rgba(15, 17, 23, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 8px;">
+            ${hasForecast ? `<div style="margin-bottom: ${hasSchedule ? '16px' : '0'}; padding-bottom: ${hasSchedule ? '16px' : '0'}; border-bottom: ${hasSchedule ? '1px solid var(--border)' : 'none'};">${forecastHtml}</div>` : ''}
+            ${hasSchedule ? `<div>${plansHtml}</div>` : ''}
+          </div>
+        `;
+      }
 
       html += `
         <div class="goal-item">
@@ -409,12 +437,7 @@ export async function renderPlanScreen(container, db) {
 
             ${settingsHtml}
             ${transferHtml}
-
-            <!-- ОБЪЕДИНЕННЫЙ БЛОК ДЕТАЛЕЙ -->
-            <div class="goal-details-container">
-              ${forecastHtml}
-              ${plansHtml}
-            </div>
+            ${detailsBlockHtml}
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
               <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%;">⚙️</button>
