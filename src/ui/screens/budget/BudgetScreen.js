@@ -13,10 +13,10 @@ import { generateId } from '../../../domain/shared/ids.js';
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 // SVG-иконки
-const ICON_EDIT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
-const ICON_HIDE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
-const ICON_SHOW = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-const ICON_DELETE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+const ICON_EDIT = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+const ICON_HIDE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+const ICON_SHOW = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
 
 export async function renderBudgetScreen(container, db) {
   const now = new Date();
@@ -208,11 +208,13 @@ export async function renderBudgetScreen(container, db) {
         ${renderStandaloneFacts(factIncomes, factExpenses)}
       </div>
 
-      <!-- Модалка для форм -->
       <div class="modal-overlay" id="form-modal">
         <div class="modal-content" id="form-modal-content"></div>
       </div>
     `;
+
+    // Инициализируем свайпы
+    initSwipe(container);
 
     document.getElementById('budget-month-picker').addEventListener('change', (e) => {
       currentMonth = e.target.value;
@@ -247,19 +249,6 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
-    container.querySelectorAll('[data-action="delete-fact"]').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        if (!confirm('Удалить эту фактическую операцию?')) return;
-        await executeCommand(db, {
-          commandId: generateId(),
-          commandType: 'actualTransaction.delete',
-          payload: { id: btn.dataset.id }
-        });
-        render();
-      });
-    });
-
     container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -284,11 +273,105 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
-    // Закрытие модалки по клику на фон
     document.getElementById('form-modal').addEventListener('click', (e) => {
       if (e.target.id === 'form-modal') {
         e.target.classList.remove('active');
       }
+    });
+  }
+
+  // === ФУНКЦИЯ ИНИЦИАЛИЗАЦИИ СВАЙПА И УДАЛЕНИЯ ===
+  function initSwipe(container) {
+    container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+      const item = wrapper.querySelector('.swipe-item');
+      let startX = 0;
+      let currentX = 0;
+      let isDragging = false;
+      let isOpen = false;
+      const threshold = 40;
+      const openDistance = -80;
+
+      // Обработчик клика по кнопке удаления (для свайпа)
+      const deleteBtn = wrapper.querySelector('.swipe-action');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const type = deleteBtn.dataset.type;
+          const id = deleteBtn.dataset.id;
+          if (type === 'plan') {
+            if (!confirm('Удалить этот план? (Факты останутся)')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'plannedTransaction.delete', payload: { id } });
+          } else {
+            if (!confirm('Удалить этот факт?')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'actualTransaction.delete', payload: { id } });
+          }
+          render();
+        });
+      }
+
+      // Обработчик кнопки удаления для десктопа (внутри карточки)
+      const desktopDelete = wrapper.querySelector('.desktop-delete');
+      if (desktopDelete) {
+        desktopDelete.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const type = desktopDelete.dataset.type;
+          const id = desktopDelete.dataset.id;
+          if (type === 'plan') {
+            if (!confirm('Удалить этот план? (Факты останутся)')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'plannedTransaction.delete', payload: { id } });
+          } else {
+            if (!confirm('Удалить этот факт?')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'actualTransaction.delete', payload: { id } });
+          }
+          render();
+        });
+      }
+
+      // Сенсорные события
+      item.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+        item.style.transition = 'none';
+      }, { passive: true });
+
+      item.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const deltaX = e.touches[0].clientX - startX;
+        
+        if (deltaX > 0 && !isOpen) {
+          currentX = 0;
+        } else if (deltaX < 0 && isOpen) {
+          currentX = Math.max(openDistance + deltaX, openDistance);
+        } else {
+          currentX = Math.min(0, deltaX);
+        }
+        item.style.transform = `translateX(${currentX}px)`;
+      }, { passive: true });
+
+      item.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        item.style.transition = 'transform 0.3s ease';
+        
+        if (currentX < -threshold) {
+          item.style.transform = `translateX(${openDistance}px)`;
+          isOpen = true;
+          currentX = openDistance;
+        } else {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+
+      // Закрываем свайп при клике в любом другом месте
+      document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target) && isOpen) {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
     });
   }
 
@@ -307,39 +390,44 @@ export async function renderBudgetScreen(container, db) {
           const totalLinkedFact = linkedFacts.reduce((sum, f) => sum + f.amountMinor, 0);
 
           return `
-          <div class="event-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'}; margin-bottom: 12px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-              <div>
-                <div class="event-title" style="${isInactive ? 'text-decoration: line-through;' : ''}">${tx.title}</div>
-                <div class="event-meta">
-                  План: ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'} • ${dateInfo}
-                </div>
-                ${linkedFacts.length > 0 ? `<div class="event-meta" style="color:var(--green)">Внесено факт: ${formatMoney(totalLinkedFact)} ₽</div>` : ''}
-              </div>
-              <div style="display:flex; flex-direction:column; gap:8px; align-items: flex-end;">
-                <button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>
-                <div style="display:flex; gap:8px; align-items: center;">
-                  <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); display:flex; align-items:center; justify-content:center;">${ICON_EDIT}</button>
-                  <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="display:flex; align-items:center; justify-content:center;">
-                    ${tx.isActive !== false ? ICON_SHOW : ICON_HIDE}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            ${linkedFacts.length > 0 ? `
-              <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
-                ${linkedFacts.map(f => `
-                  <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom: 4px;">
-                    <span>Факт: ${new Date(f.actualDate).toLocaleDateString('ru-RU')}</span>
-                    <span style="display:flex; gap:8px; align-items:center;">
-                      <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
-                      <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}" style="display:flex; align-items:center; justify-content:center;">${ICON_DELETE}</button>
-                    </span>
+          <div class="swipe-wrapper" style="margin-bottom: 12px;">
+            <div class="swipe-action" data-type="plan" data-id="${tx.id}">Удалить</div>
+            <div class="event-item swipe-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'};">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="event-title" style="${isInactive ? 'text-decoration: line-through;' : ''}">${tx.title}</div>
+                  <div class="event-meta">
+                    План: ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'} • ${dateInfo}
                   </div>
-                `).join('')}
+                  ${linkedFacts.length > 0 ? `<div class="event-meta" style="color:var(--green)">Внесено факт: ${formatMoney(totalLinkedFact)} ₽</div>` : ''}
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px; align-items: flex-end;">
+                  <button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>
+                  <div style="display:flex; gap:8px; align-items: center;">
+                    <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); display:flex; align-items:center; justify-content:center;">${ICON_EDIT}</button>
+                    <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="display:flex; align-items:center; justify-content:center;">
+                      ${tx.isActive !== false ? ICON_SHOW : ICON_HIDE}
+                    </button>
+                    <button class="btn-icon desktop-delete" data-type="plan" data-id="${tx.id}" title="Удалить" style="color: var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
+                  </div>
+                </div>
               </div>
-            ` : ''}
+
+              ${linkedFacts.length > 0 ? `
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
+                  ${linkedFacts.map(f => `
+                    <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom: 4px;">
+                      <span>Факт: ${new Date(f.actualDate).toLocaleDateString('ru-RU')}</span>
+                      <span style="display:flex; gap:8px; align-items:center;">
+                        <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
+                        <button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
+                        <button class="btn-icon swipe-delete-fact" data-id="${f.id}" style="display:none;"></button>
+                      </span>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
+            </div>
           </div>
         `}).join('')}
       </div>
@@ -351,15 +439,18 @@ export async function renderBudgetScreen(container, db) {
     if (!standalone.length) return '<p class="muted">Нет внеплановых фактов.</p>';
 
     return standalone.map(f => `
-      <div class="event-item" style="border-left-color: ${f.type === 'income' ? 'var(--green)' : 'var(--red)'}; margin-bottom: 8px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;">
-          <div>
-            <div class="event-title">${f.title}</div>
-            <div class="event-meta">${new Date(f.actualDate).toLocaleDateString('ru-RU')}</div>
-          </div>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <b style="color:${f.type === 'income' ? 'var(--green)' : 'var(--red)'}">${formatMoney(f.amountMinor)} ₽</b>
-            <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}" style="display:flex; align-items:center; justify-content:center;">${ICON_DELETE}</button>
+      <div class="swipe-wrapper" style="margin-bottom: 8px;">
+        <div class="swipe-action" data-type="fact" data-id="${f.id}">Удалить</div>
+        <div class="event-item swipe-item" style="border-left-color: ${f.type === 'income' ? 'var(--green)' : 'var(--red)'};">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div class="event-title">${f.title}</div>
+              <div class="event-meta">${new Date(f.actualDate).toLocaleDateString('ru-RU')}</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <b style="color:${f.type === 'income' ? 'var(--green)' : 'var(--red)'}">${formatMoney(f.amountMinor)} ₽</b>
+              <button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
+            </div>
           </div>
         </div>
       </div>
