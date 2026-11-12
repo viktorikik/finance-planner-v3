@@ -40,8 +40,8 @@ export async function render(route) {
     container.innerHTML = '';
     await renderer(container, dbInstance);
   } catch (err) {
-    console.error(err);
-    container.innerHTML = `<div class="error-msg">Ошибка отображения: ${err.message}</div>`;
+    console.error('[Router] Ошибка отображения:', err);
+    container.innerHTML = `<div class="card" style="margin: 16px;"><h2 style="color: var(--red);">Ошибка загрузки</h2><p class="muted">${err.message}</p><p class="muted">Попробуйте обновить страницу.</p></div>`;
   }
 }
 
