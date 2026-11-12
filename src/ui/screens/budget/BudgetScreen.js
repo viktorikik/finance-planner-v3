@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «Бюджет». Управление доходами, расходами и фактом + Годовой прогноз
-   + Аналитика по категориям (из БД).
+   + Аналитика по категориям (из БД). Формы вынесены в модальные окна.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -11,6 +11,12 @@ import { calculateCategoryAnalytics } from '../../../domain/budget/categoryAnaly
 import { generateId } from '../../../domain/shared/ids.js';
 
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+
+// SVG-иконки
+const ICON_EDIT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+const ICON_HIDE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+const ICON_SHOW = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+const ICON_DELETE = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
 
 export async function renderBudgetScreen(container, db) {
   const now = new Date();
@@ -162,7 +168,6 @@ export async function renderBudgetScreen(container, db) {
       `;
     }
 
-    // ИСПРАВЛЕНО: Убрана кнопка "Назад", оставлен только заголовок
     container.innerHTML = `
       <h2 style="margin: 0 0 16px 0; font-size: 20px;">Бюджет</h2>
 
@@ -203,7 +208,10 @@ export async function renderBudgetScreen(container, db) {
         ${renderStandaloneFacts(factIncomes, factExpenses)}
       </div>
 
-      <div id="tx-form-container"></div>
+      <!-- Модалка для форм -->
+      <div class="modal-overlay" id="form-modal">
+        <div class="modal-content" id="form-modal-content"></div>
+      </div>
     `;
 
     document.getElementById('budget-month-picker').addEventListener('change', (e) => {
@@ -230,7 +238,8 @@ export async function renderBudgetScreen(container, db) {
     document.getElementById('btn-add-fact-expense').addEventListener('click', () => showFactForm('expense'));
 
     container.querySelectorAll('[data-action="add-fact-to-plan"]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const planId = btn.dataset.planId;
         const allPlans = [...plan.incomes, ...plan.expenses];
         const plannedTx = allPlans.find(t => t.id === planId);
@@ -239,7 +248,8 @@ export async function renderBudgetScreen(container, db) {
     });
 
     container.querySelectorAll('[data-action="delete-fact"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         if (!confirm('Удалить эту фактическую операцию?')) return;
         await executeCommand(db, {
           commandId: generateId(),
@@ -251,7 +261,8 @@ export async function renderBudgetScreen(container, db) {
     });
 
     container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
         const id = btn.dataset.id;
         const isActive = btn.dataset.active === 'true';
         await executeCommand(db, {
@@ -264,12 +275,20 @@ export async function renderBudgetScreen(container, db) {
     });
 
     container.querySelectorAll('[data-action="edit"]').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
         const txId = btn.dataset.id;
         const allTxs = [...plan.incomes, ...plan.expenses, ...plan.inactiveIncomes, ...plan.inactiveExpenses];
         const tx = allTxs.find(t => t.id === txId);
         if (tx) showPlannedForm(tx.type, tx);
       });
+    });
+
+    // Закрытие модалки по клику на фон
+    document.getElementById('form-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'form-modal') {
+        e.target.classList.remove('active');
+      }
     });
   }
 
@@ -300,9 +319,9 @@ export async function renderBudgetScreen(container, db) {
               <div style="display:flex; flex-direction:column; gap:8px; align-items: flex-end;">
                 <button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>
                 <div style="display:flex; gap:8px; align-items: center;">
-                  <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); font-size: 16px;">✏️</button>
-                  <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="font-size: 16px;">
-                    ${tx.isActive !== false ? '👁️' : '🙈'}
+                  <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); display:flex; align-items:center; justify-content:center;">${ICON_EDIT}</button>
+                  <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="display:flex; align-items:center; justify-content:center;">
+                    ${tx.isActive !== false ? ICON_SHOW : ICON_HIDE}
                   </button>
                 </div>
               </div>
@@ -315,7 +334,7 @@ export async function renderBudgetScreen(container, db) {
                     <span>Факт: ${new Date(f.actualDate).toLocaleDateString('ru-RU')}</span>
                     <span style="display:flex; gap:8px; align-items:center;">
                       <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
-                      <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}" style="font-size: 12px;">✕</button>
+                      <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}" style="display:flex; align-items:center; justify-content:center;">${ICON_DELETE}</button>
                     </span>
                   </div>
                 `).join('')}
@@ -340,7 +359,7 @@ export async function renderBudgetScreen(container, db) {
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
             <b style="color:${f.type === 'income' ? 'var(--green)' : 'var(--red)'}">${formatMoney(f.amountMinor)} ₽</b>
-            <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}">✕</button>
+            <button class="btn-icon delete" data-action="delete-fact" data-id="${f.id}" style="display:flex; align-items:center; justify-content:center;">${ICON_DELETE}</button>
           </div>
         </div>
       </div>
@@ -354,7 +373,8 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function showPlannedForm(type, existingTx = null) {
-    const formContainer = document.getElementById('tx-form-container');
+    const modal = document.getElementById('form-modal');
+    const content = document.getElementById('form-modal-content');
     const isIncome = type === 'income';
 
     const titleVal = existingTx ? existingTx.title : '';
@@ -368,48 +388,49 @@ export async function renderBudgetScreen(container, db) {
 
     const categories = getCategoriesForType(type);
 
-    formContainer.innerHTML = `
-      <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}">
-        <h2>${existingTx ? 'Редактировать план' : 'Добавить план'}: ${isIncome ? 'Доход' : 'Расход'}</h2>
-        <form id="tx-form" class="create-goal-form">
-          <input type="text" id="tx-title" placeholder="Название" value="${titleVal}" required>
-          <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" value="${amountVal}" required min="1" step="0.01">
+    content.innerHTML = `
+      <h3 style="color: ${isIncome ? 'var(--green)' : 'var(--red)'};">${existingTx ? 'Редактировать план' : 'Добавить план'}: ${isIncome ? 'Доход' : 'Расход'}</h3>
+      <form id="tx-form" class="create-goal-form" style="margin-top: 16px;">
+        <input type="text" id="tx-title" placeholder="Название" value="${titleVal}" required>
+        <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" value="${amountVal}" required min="1" step="0.01">
 
-          <select id="tx-category">
-            ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
+        <select id="tx-category">
+          ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
+        </select>
+
+        <div class="form-row-bottom">
+          <select id="tx-frequency">
+            <option value="regular" ${freqVal === 'regular' ? 'selected' : ''}>Регулярный</option>
+            <option value="one-time" ${freqVal === 'one-time' ? 'selected' : ''}>Разовый</option>
           </select>
+          <input type="month" id="tx-start-month" value="${startMonthVal}" required>
+        </div>
 
-          <div class="form-row-bottom">
-            <select id="tx-frequency">
-              <option value="regular" ${freqVal === 'regular' ? 'selected' : ''}>Регулярный</option>
-              <option value="one-time" ${freqVal === 'one-time' ? 'selected' : ''}>Разовый</option>
-            </select>
-            <input type="month" id="tx-start-month" value="${startMonthVal}" required>
-          </div>
+        <div id="regular-fields" style="display: ${freqVal === 'regular' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
+           <div class="form-group">
+              <label>День месяца (для календаря, 1-31):</label>
+              <input type="number" id="tx-day-of-month" value="${dayOfMonthVal}" placeholder="Например, 5" min="1" max="31">
+           </div>
+           <div class="form-group">
+              <label>Месяц окончания (необязательно):</label>
+              <input type="month" id="tx-end-month" value="${endMonthVal}">
+           </div>
+        </div>
 
-          <div id="regular-fields" style="display: ${freqVal === 'regular' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
-             <div class="form-group">
-                <label>День месяца (для календаря, 1-31):</label>
-                <input type="number" id="tx-day-of-month" value="${dayOfMonthVal}" placeholder="Например, 5" min="1" max="31">
-             </div>
-             <div class="form-group">
-                <label>Месяц окончания (необязательно):</label>
-                <input type="month" id="tx-end-month" value="${endMonthVal}">
-             </div>
-          </div>
+        <div id="one-time-fields" style="display: ${freqVal === 'one-time' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
+           <div class="form-group">
+              <label>Конкретная дата (для календаря):</label>
+              <input type="date" id="tx-date" value="${dateVal}">
+           </div>
+        </div>
 
-          <div id="one-time-fields" style="display: ${freqVal === 'one-time' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
-             <div class="form-group">
-                <label>Конкретная дата (для календаря):</label>
-                <input type="date" id="tx-date" value="${dateVal}">
-             </div>
-          </div>
-
-          <button type="submit" class="btn" style="margin-top:8px;">Сохранить</button>
-          <button type="button" class="btn btn-outline" id="btn-cancel" style="margin-top:8px;">Отмена</button>
-        </form>
-      </div>
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button type="button" class="btn btn-outline" id="btn-cancel">Отмена</button>
+          <button type="submit" class="btn">Сохранить</button>
+        </div>
+      </form>
     `;
+    modal.classList.add('active');
 
     const freqSelect = document.getElementById('tx-frequency');
     const regFields = document.getElementById('regular-fields');
@@ -421,7 +442,7 @@ export async function renderBudgetScreen(container, db) {
       oneTimeFields.style.display = isReg ? 'none' : 'flex';
     });
 
-    document.getElementById('btn-cancel').addEventListener('click', () => formContainer.innerHTML = '');
+    document.getElementById('btn-cancel').addEventListener('click', () => modal.classList.remove('active'));
 
     document.getElementById('tx-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -453,7 +474,7 @@ export async function renderBudgetScreen(container, db) {
             payload: { type, title, amountMinor, frequency, startMonth, endMonth, dayOfMonth, date, category }
           });
         }
-        formContainer.innerHTML = '';
+        modal.classList.remove('active');
         render();
       } catch (err) {
         alert('Ошибка: ' + err.message);
@@ -462,7 +483,8 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function showFactForm(type, plannedTx = null) {
-    const formContainer = document.getElementById('tx-form-container');
+    const modal = document.getElementById('form-modal');
+    const content = document.getElementById('form-modal-content');
     const isIncome = type === 'income';
     const today = new Date().toISOString().slice(0, 10);
 
@@ -472,26 +494,27 @@ export async function renderBudgetScreen(container, db) {
 
     const categories = getCategoriesForType(type);
 
-    formContainer.innerHTML = `
-      <div class="card" style="border-color: ${isIncome ? 'var(--green)' : 'var(--red)'}; box-shadow: 0 0 20px ${isIncome ? 'rgba(61,220,151,0.2)' : 'rgba(255,92,124,0.2)'};">
-        <h2>Внести факт: ${isIncome ? 'Доход' : 'Расход'}</h2>
-        <form id="fact-form" class="create-goal-form">
-          <input type="text" id="fact-title" placeholder="Название" value="${titleVal}" required>
-          <input type="number" id="fact-amount" placeholder="Фактическая сумма (₽)" value="${amountVal}" required min="1" step="0.01">
-          <select id="fact-category">
-            ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
-          </select>
-          <div class="form-group">
-            <label>Дата фактической операции:</label>
-            <input type="date" id="fact-date" value="${today}" required>
-          </div>
-          <button type="submit" class="btn" style="margin-top:8px;">Сохранить факт</button>
-          <button type="button" class="btn btn-outline" id="btn-cancel-fact" style="margin-top:8px;">Отмена</button>
-        </form>
-      </div>
+    content.innerHTML = `
+      <h3 style="color: ${isIncome ? 'var(--green)' : 'var(--red)'};">Внести факт: ${isIncome ? 'Доход' : 'Расход'}</h3>
+      <form id="fact-form" class="create-goal-form" style="margin-top: 16px;">
+        <input type="text" id="fact-title" placeholder="Название" value="${titleVal}" required>
+        <input type="number" id="fact-amount" placeholder="Фактическая сумма (₽)" value="${amountVal}" required min="1" step="0.01">
+        <select id="fact-category">
+          ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
+        </select>
+        <div class="form-group">
+          <label>Дата фактической операции:</label>
+          <input type="date" id="fact-date" value="${today}" required>
+        </div>
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button type="button" class="btn btn-outline" id="btn-cancel-fact">Отмена</button>
+          <button type="submit" class="btn">Сохранить</button>
+        </div>
+      </form>
     `;
+    modal.classList.add('active');
 
-    document.getElementById('btn-cancel-fact').addEventListener('click', () => formContainer.innerHTML = '');
+    document.getElementById('btn-cancel-fact').addEventListener('click', () => modal.classList.remove('active'));
 
     document.getElementById('fact-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -513,7 +536,7 @@ export async function renderBudgetScreen(container, db) {
             plannedTransactionId: plannedTx ? plannedTx.id : null
           }
         });
-        formContainer.innerHTML = '';
+        modal.classList.remove('active');
         render();
       } catch (err) {
         alert('Ошибка: ' + err.message);
