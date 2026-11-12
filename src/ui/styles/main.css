@@ -352,3 +352,91 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
     display: none; /* На десктопе свайп не нужен */
   }
 }
+
+
+/* ==========================================================================
+   Таблица годового прогноза (Шаг D) — Обновленная мобильная версия
+   ========================================================================== */
+.yearly-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.yearly-header {
+  display: none; /* Скрываем заголовки на мобильных, так как они теперь встроены в строки */
+}
+
+.yearly-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.yearly-row:hover {
+  background: var(--card-2);
+  border-color: var(--accent);
+}
+
+.yearly-row-negative {
+  background: rgba(255, 92, 124, 0.08);
+  border-color: rgba(255, 92, 124, 0.3);
+}
+
+.yearly-row-negative:hover {
+  background: rgba(255, 92, 124, 0.15);
+}
+
+.yearly-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.yearly-month {
+  font-weight: 600;
+  text-transform: capitalize;
+  color: var(--text);
+  font-size: 15px;
+}
+
+.yearly-balance {
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.yearly-row-bottom {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.yearly-income {
+  color: var(--green);
+}
+
+.yearly-expense {
+  color: var(--red);
+}
+
+.yearly-total-row {
+  margin-top: 8px;
+  background: var(--card-2);
+  border: 2px solid var(--accent);
+  font-weight: 700;
+  cursor: default;
+}
+
+.yearly-total-row:hover {
+  background: var(--card-2);
+  border-color: var(--accent);
+}
