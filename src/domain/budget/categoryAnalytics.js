@@ -1,15 +1,16 @@
 /* ==========================================================================
    Аналитика расходов по категориям.
+   Принимает справочник категорий извне (из БД).
    ========================================================================== */
 
 /**
  * Считает суммы по категориям для указанного месяца.
- * Приоритет: сначала фактические расходы, если их нет — плановые.
  * @param {string} month - 'YYYY-MM'
  * @param {Object} state - { plannedTransactions, actualTransactions }
- * @returns {Object} { categories: [{key, amountMinor, percent}], totalMinor, source }
+ * @param {Object} categoriesMeta - Справочник { id: {name, color, emoji} }
+ * @returns {Object} { categories: [{key, name, color, amountMinor, percent}], totalMinor, source }
  */
-export function calculateCategoryAnalytics(month, state) {
+export function calculateCategoryAnalytics(month, state, categoriesMeta = {}) {
   const { plannedTransactions = [], actualTransactions = [] } = state;
 
   // 1. Пробуем взять фактические расходы
@@ -23,7 +24,6 @@ export function calculateCategoryAnalytics(month, state) {
   // 2. Если фактов нет — берем плановые (активные) за этот месяц
   if (items.length === 0) {
     source = 'plan';
-    // Для регулярных операций — проверяем попадание месяца в период
     items = plannedTransactions.filter(tx => {
       if (tx.type !== 'expense' || tx.isActive === false) return false;
       if (tx.frequency === 'one-time') return tx.startMonth === month;
@@ -49,39 +49,20 @@ export function calculateCategoryAnalytics(month, state) {
 
   const totalMinor = [...map.values()].reduce((s, v) => s + v, 0);
 
-  // 4. Форматируем
-  const CATEGORY_NAMES = {
-    food: 'Еда',
-    housing: 'Жилье',
-    transport: 'Транспорт',
-    entertainment: 'Развлечения',
-    health: 'Здоровье',
-    education: 'Образование',
-    salary: 'Зарплата',
-    freelance: 'Фриланс',
-    gift: 'Подарки',
-    other: 'Другое',
-  };
-
-  const CATEGORY_COLORS = {
-    food: '#ff9f43',
-    housing: '#7c5cff',
-    transport: '#3ddc97',
-    entertainment: '#ff5c7c',
-    health: '#00d2d3',
-    education: '#feca57',
-    other: '#8b91a3',
-  };
-
+  // 4. Форматируем (используя данные из БД)
   const categories = [...map.entries()]
     .sort((a, b) => b[1] - a[1]) // По убыванию суммы
-    .map(([key, amountMinor]) => ({
-      key,
-      name: CATEGORY_NAMES[key] || key,
-      color: CATEGORY_COLORS[key] || '#8b91a3',
-      amountMinor,
-      percent: totalMinor > 0 ? (amountMinor / totalMinor) * 100 : 0,
-    }));
+    .map(([key, amountMinor]) => {
+      const meta = categoriesMeta[key] || { name: key, color: '#8b91a3', emoji: '📦' };
+      return {
+        key,
+        name: meta.name,
+        color: meta.color,
+        emoji: meta.emoji || '📦',
+        amountMinor,
+        percent: totalMinor > 0 ? (amountMinor / totalMinor) * 100 : 0,
+      };
+    });
 
   return { categories, totalMinor, source };
 }
