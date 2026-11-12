@@ -40,3 +40,33 @@ export class DuplicateCommandError extends DomainError {
     super('DUPLICATE_COMMAND', message);
   }
 }
+
+export class CategoryNotFoundError extends DomainError {
+  constructor(message = 'Категория не найдена') {
+    super('CATEGORY_NOT_FOUND', message);
+  }
+}
+
+export class CategoryInUseError extends DomainError {
+  constructor(message = 'Категория используется в транзакциях') {
+    super('CATEGORY_IN_USE', message);
+  }
+}
+
+export class SystemCategoryError extends DomainError {
+  constructor(message = 'Системную категорию нельзя удалить, только архивировать') {
+    super('SYSTEM_CATEGORY', message);
+  }
+}
+
+export class DataClearError extends DomainError {
+  constructor(message = 'Ошибка при очистке данных') {
+    super('DATA_CLEAR_FAILED', message);
+  }
+}
+
+export class InvalidBackupError extends DomainError {
+  constructor(message = 'Неверный формат файла бэкапа') {
+    super('INVALID_BACKUP', message);
+  }
+}
