@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Улучшенный график взносов: колонки Дата | Взнос+Проценты | Итого.
+   Улучшена иерархия и визуальное разделение блоков.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -22,7 +22,6 @@ const forecastCache = new Map();
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
-// Функция для расчета графика с процентами
 function buildSchedule(balance, futureOps, annualRate) {
   let currentBalance = balance;
   const monthlyRate = annualRate ? (Math.pow(1 + annualRate / 100, 1/12) - 1) : 0;
@@ -347,46 +346,40 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
-      // НОВЫЙ ФОРМАТ ГРАФИКА ВЗНОСОВ
+      // НОВЫЙ БЛОК ГРАФИКА (ВНУТРИ ОБЩЕГО КОНТЕЙНЕРА ДЕТАЛЕЙ)
       const visibleSchedule = isPlansExpanded ? schedule : schedule.slice(0, 3);
       const plansHtml = schedule.length > 0 ? `
-        <div class="goal-plans-container">
-          <div class="plans-header">
-            <span>График взносов (${schedule.length})</span>
+        <div class="schedule-block">
+          <div class="schedule-header">
+            <span>Детализация по месяцам</span>
             <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red);">Очистить</button>
           </div>
-          <div class="plans-list ${isAmountHidden ? 'blurred' : ''}">
+          <div class="schedule-list ${isAmountHidden ? 'blurred' : ''}">
             ${visibleSchedule.map(row => {
               const [y, m] = row.month.split('-');
               const monthName = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'short' });
               const yearShort = y.slice(2);
               
               return `
-                <div style="display: grid; grid-template-columns: 65px 1fr auto; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); gap: 8px;">
-                  
-                  <!-- Дата -->
-                  <div style="display: flex; flex-direction: column;">
-                    <span style="font-weight: 600; font-size: 14px; color: var(--text); text-transform: capitalize;">${monthName}</span>
-                    <span style="font-size: 11px; color: var(--muted);">'${yearShort}</span>
+                <div class="schedule-row">
+                  <div class="schedule-date">
+                    <span>${monthName}</span>
+                    <span style="font-size: 10px; color: var(--muted);">'${yearShort}</span>
                   </div>
-                  
-                  <!-- Детали -->
-                  <div style="display: flex; flex-direction: column; gap: 2px;">
-                    <span style="font-size: 12px; color: var(--muted);">Взнос: ${formatRub(row.contribution)} ₽</span>
-                    <span style="font-size: 12px; color: var(--green);">Проценты: +${formatRub(row.interest)} ₽</span>
+                  <div class="schedule-details">
+                    <span>Взнос: ${formatRub(row.contribution)} ₽</span>
+                    <span style="color: var(--green);">Проценты: +${formatRub(row.interest)} ₽</span>
                   </div>
-                  
-                  <!-- Итого + Кнопка удаления -->
-                  <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end;">
-                    <span style="font-weight: 700; font-size: 15px; white-space: nowrap;">${formatRub(row.total)} ₽</span>
-                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 20px; padding: 0 4px; display: flex; align-items: center; height: 24px;">×</button>` : '<span style="width: 20px;"></span>'}
+                  <div class="schedule-total">
+                    <span>${formatRub(row.total)} ₽</span>
+                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}">×</button>` : '<span style="width: 20px;"></span>'}
                   </div>
                 </div>
               `;
             }).join('')}
           </div>
           ${schedule.length > 3 ? `
-            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 12px;">
+            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
               ${isPlansExpanded ? 'Скрыть лишние' : `Показать все (${schedule.length})`}
             </button>
           ` : ''}
@@ -408,16 +401,20 @@ export async function renderPlanScreen(container, db) {
             </div>
           </div>
 
-          <div class="goal-body" style="display: ${isExpanded ? 'flex' : 'none'}; flex-direction: column; gap: 12px; margin-top: 12px;">
+          <div class="goal-body" style="display: ${isExpanded ? 'flex' : 'none'}; flex-direction: column; gap: 16px; margin-top: 16px;">
             <div class="goal-progress ${isAmountHidden ? 'blurred' : ''}">
               <span class="percent">${percent}%</span>
             </div>
             <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
 
-            ${forecastHtml}
             ${settingsHtml}
             ${transferHtml}
-            ${plansHtml}
+
+            <!-- ОБЪЕДИНЕННЫЙ БЛОК ДЕТАЛЕЙ -->
+            <div class="goal-details-container">
+              ${forecastHtml}
+              ${plansHtml}
+            </div>
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
               <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%;">⚙️</button>
