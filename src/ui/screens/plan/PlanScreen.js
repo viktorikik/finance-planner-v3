@@ -1,7 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Исправлены названия кнопок перевода (Свободные деньги вместо Пула).
-   Категории доходов теперь берутся из БД.
+   Добавлен детальный график взносов: Взнос + Проценты = Итого на конец месяца.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -22,6 +21,27 @@ const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+
+// Функция для расчета графика с процентами
+function buildSchedule(balance, futureOps, annualRate) {
+  let currentBalance = balance;
+  const monthlyRate = annualRate ? (Math.pow(1 + annualRate / 100, 1/12) - 1) : 0;
+  
+  return futureOps.map(op => {
+    const contribution = op.plannedAmountMinor;
+    currentBalance += contribution;
+    const interest = Math.round(currentBalance * monthlyRate);
+    currentBalance += interest;
+    
+    return {
+      id: op.id,
+      month: op.plannedMonth,
+      contribution,
+      interest,
+      total: currentBalance
+    };
+  });
+}
 
 export async function renderPlanScreen(container, db) {
   const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings', 'categories'], 'readonly');
@@ -63,7 +83,6 @@ export async function renderPlanScreen(container, db) {
     return 0;
   });
 
-  // Динамические категории доходов из БД
   const activeIncomeCats = allCategories
     .filter(c => c.type === 'income' && !c.isArchived)
     .sort((a, b) => a.sortOrder - b.sortOrder);
@@ -183,13 +202,13 @@ export async function renderPlanScreen(container, db) {
 
       const isExpanded = !collapsedGoals.has(goal.id);
       const isPlansExpanded = expandedPlans.has(goal.id);
-      const visiblePlans = isPlansExpanded ? goalPlans : goalPlans.slice(0, 3);
       const isSettingsOpen = openSettingsGoalId === goal.id;
       const isTransferOpen = openTransferGoalId === goal.id;
 
       const calcStartMonth = (goal.startMonth && goal.startMonth > currentMonth) ? goal.startMonth : currentMonth;
 
       let forecastHtml = '';
+      let schedule = [];
       const cacheKey = `${goal.id}_${balance}_${goal.targetAmountMinor}_${goal.annualRate}_${goal.individualInflationRate}_${goal.indexationEnabled}_${goal.indexationRate}_${goal.planMode}_${goal.manualMonthlyAmountMinor}_${goal.deadlineMonth}_${calcStartMonth}`;
       
       if (!forecastCache.has(cacheKey)) {
@@ -197,7 +216,7 @@ export async function renderPlanScreen(container, db) {
         let futureOps = [];
 
         if (goalPlans.length > 0) {
-          futureOps = goalPlans.map(op => ({ plannedMonth: op.plannedMonth, plannedAmountMinor: op.plannedAmountMinor }));
+          futureOps = goalPlans.map(op => ({ id: op.id, plannedMonth: op.plannedMonth, plannedAmountMinor: op.plannedAmountMinor }));
         } else if (goal.deadlineMonth && goal.planMode === 'auto') {
            const req = calculateRequiredContribution(goal, balance, generalInflationSetting, calcStartMonth, goal.deadlineMonth);
            if (req.status === 'success') {
@@ -223,10 +242,13 @@ export async function renderPlanScreen(container, db) {
         }
 
         const fc = forecastGoal(goal, balance, futureOps, generalInflationSetting, calcStartMonth, 600);
-        forecastCache.set(cacheKey, { reqContrib, fc });
+        schedule = buildSchedule(balance, futureOps, goal.annualRate);
+        
+        forecastCache.set(cacheKey, { reqContrib, fc, schedule });
       }
 
-      const { reqContrib, fc } = forecastCache.get(cacheKey);
+      const { reqContrib, fc, schedule: cachedSchedule } = forecastCache.get(cacheKey);
+      schedule = cachedSchedule;
 
       if (fc.status === 'projected') {
         forecastHtml = `
@@ -325,6 +347,42 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
+      // Форматирование списка планов
+      const visibleSchedule = isPlansExpanded ? schedule : schedule.slice(0, 3);
+      const plansHtml = schedule.length > 0 ? `
+        <div class="goal-plans-container">
+          <div class="plans-header">
+            <span>График взносов (${schedule.length})</span>
+            <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red);">Очистить</button>
+          </div>
+          <div class="plans-list ${isAmountHidden ? 'blurred' : ''}">
+            ${visibleSchedule.map(row => {
+              const [y, m] = row.month.split('-');
+              const dateStr = `${m}.${y.slice(2)}`;
+              
+              return `
+                <div style="display: flex; flex-direction: column; padding: 8px 0; border-bottom: 1px solid var(--border);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                    <span style="font-weight: 600; font-size: 14px; color: var(--text);">${dateStr}</span>
+                    <span style="font-weight: 700; font-size: 15px;">${formatRub(row.total)} ₽</span>
+                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 16px; padding: 0 8px;">×</button>` : '<span style="width: 32px;"></span>'}
+                  </div>
+                  <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px;">
+                    <span>Взнос: ${formatRub(row.contribution)} ₽</span>
+                    <span>Проценты: <span style="color: var(--green);">+${formatRub(row.interest)}</span> ₽</span>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+          ${schedule.length > 3 ? `
+            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 8px;">
+              ${isPlansExpanded ? 'Скрыть лишние' : `Показать все (${schedule.length})`}
+            </button>
+          ` : ''}
+        </div>
+      ` : '';
+
       html += `
         <div class="goal-item">
           <div class="goal-header" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
@@ -349,33 +407,7 @@ export async function renderPlanScreen(container, db) {
             ${forecastHtml}
             ${settingsHtml}
             ${transferHtml}
-
-            ${goalPlans.length > 0 ? `
-              <div class="goal-plans-container">
-                <div class="plans-header">
-                  <span>График взносов (${goalPlans.length})</span>
-                  <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red);">Очистить</button>
-                </div>
-                <div class="plans-list ${isAmountHidden ? 'blurred' : ''}">
-                  ${visiblePlans.map(op => {
-                    const d = new Date(op.plannedMonth + '-01');
-                    const mName = d.toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' });
-                    return `
-                      <div class="plan-row">
-                        <span>${mName}</span>
-                        <b>${formatRub(op.plannedAmountMinor)} ₽</b>
-                        <button type="button" class="btn-icon delete-plan" data-op-id="${op.id}" style="color:var(--muted); font-size: 14px;">×</button>
-                      </div>
-                    `;
-                  }).join('')}
-                </div>
-                ${goalPlans.length > 3 ? `
-                  <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 4px;">
-                    ${isPlansExpanded ? 'Скрыть лишние' : `Показать все (${goalPlans.length})`}
-                  </button>
-                ` : ''}
-              </div>
-            ` : ''}
+            ${plansHtml}
 
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
               <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%;">⚙️</button>
@@ -418,7 +450,6 @@ export async function renderPlanScreen(container, db) {
 
   html += `</div></section>`;
 
-  // Архив
   html += `
     <section class="card" style="opacity: 0.8;">
       <h2>Архив достижений</h2>
@@ -443,8 +474,6 @@ export async function renderPlanScreen(container, db) {
   if (widgetContainer) {
     await renderBudgetWidget(widgetContainer, db);
   }
-
-  /* --- ОБРАБОТЧИКИ --- */
 
   document.getElementById('toggle-eye').addEventListener('click', () => {
     isAmountHidden = !isAmountHidden;
