@@ -10,6 +10,11 @@ import { executeCommand } from '../../../application/commands/executeCommand.js'
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { generateId } from '../../../domain/shared/ids.js';
 
+// Чистые SVG-иконки для действий
+const ICON_ARCHIVE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`;
+const ICON_RESTORE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/><path d="M12 16v-4m-2 2l2-2 2 2"/></svg>`;
+const ICON_DELETE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
+
 export async function renderSettingsScreen(container, db) {
   // === Внутренняя функция ре-рендера ===
   async function render() {
@@ -251,16 +256,17 @@ export async function renderSettingsScreen(container, db) {
   // === Вспомогательная функция: рендер списка категорий ===
   function renderCategoryList(cats) {
     if (!cats.length) return '<p class="muted" style="padding: 8px 0;">Нет категорий</p>';
+    
     return cats.map(cat => `
       <div class="category-item ${cat.isArchived ? 'archived' : ''}">
         <div class="category-dot" style="background: ${cat.color}"></div>
         <span class="category-emoji">${cat.emoji || '📦'}</span>
         <span class="category-name">${cat.name}${cat.isSystem ? ' 🔒' : ''}</span>
         <div class="category-actions">
-          <button data-action="toggle-archive" data-id="${cat.id}" data-archived="${cat.isArchived}" title="${cat.isArchived ? 'Восстановить' : 'Архивировать'}">
-            ${cat.isArchived ? '👁️' : '🙈'}
+          <button data-action="toggle-archive" data-id="${cat.id}" data-archived="${cat.isArchived}" title="${cat.isArchived ? 'Восстановить' : 'Архивировать'}" style="display: flex; align-items: center; justify-content: center;">
+            ${cat.isArchived ? ICON_RESTORE : ICON_ARCHIVE}
           </button>
-          ${!cat.isSystem ? `<button data-action="delete-cat" data-id="${cat.id}" title="Удалить">✕</button>` : ''}
+          ${!cat.isSystem ? `<button data-action="delete-cat" data-id="${cat.id}" title="Удалить" style="display: flex; align-items: center; justify-content: center;">${ICON_DELETE}</button>` : ''}
         </div>
       </div>
     `).join('');
@@ -366,7 +372,6 @@ export async function renderSettingsScreen(container, db) {
     document.getElementById('btn-danger-cancel').addEventListener('click', () => modal.classList.remove('active'));
 
     confirmBtn.addEventListener('click', async () => {
-      // Финальное подтверждение
       if (!confirm(`Точно выполнить "${title}"? Это последний шанс отменить.`)) return;
 
       try {
@@ -379,7 +384,6 @@ export async function renderSettingsScreen(container, db) {
         });
         modal.classList.remove('active');
         alert(isReset ? 'Данные сброшены к заводским.' : 'Финансовые данные очищены.');
-        // Перезагружаем приложение для сброса всех экранов
         window.location.reload();
       } catch (err) {
         alert('Ошибка: ' + err.message);
