@@ -1,6 +1,7 @@
 /* ==========================================================================
    Экран «План».
    Исправлены названия кнопок перевода (Свободные деньги вместо Пула).
+   Категории доходов теперь берутся из БД.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -23,11 +24,12 @@ const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 
 export async function renderPlanScreen(container, db) {
-  const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings'], 'readonly');
+  const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings', 'categories'], 'readonly');
   const goals = await getAllFromStore('goals', tx);
   const moneyEntries = await getAllFromStore('moneyEntries', tx);
   const allPlannedOps = await getAllFromStore('plannedOperations', tx);
   const actualIncomes = await getAllFromStore('actualIncomes', tx);
+  const allCategories = await getAllFromStore('categories', tx);
   
   const settingsTx = db.transaction(['settings'], 'readonly');
   const generalInflationSetting = await new Promise((resolve) => {
@@ -61,6 +63,11 @@ export async function renderPlanScreen(container, db) {
     return 0;
   });
 
+  // Динамические категории доходов из БД
+  const activeIncomeCats = allCategories
+    .filter(c => c.type === 'income' && !c.isArchived)
+    .sort((a, b) => a.sortOrder - b.sortOrder);
+
   let html = `
     <div style="text-align: center; margin-bottom: 20px; position: relative;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
@@ -80,10 +87,7 @@ export async function renderPlanScreen(container, db) {
       <form id="add-income-form" style="display: flex; gap: 8px; align-items: center;">
         <input type="number" id="income-amount" placeholder="Сумма (₽)" required style="flex: 1; min-width: 0; padding: 10px 14px; font-size: 14px;">
         <select id="income-category" style="padding: 10px 14px; font-size: 14px; width: auto;">
-          <option value="salary">Зарплата</option>
-          <option value="freelance">Фриланс</option>
-          <option value="gift">Подарок</option>
-          <option value="other">Другое</option>
+          ${activeIncomeCats.map(c => `<option value="${c.id}">${c.emoji || ''} ${c.name}</option>`).join('')}
         </select>
         <button type="submit" class="btn btn-small" style="flex-shrink: 0;">+</button>
       </form>
@@ -467,7 +471,6 @@ export async function renderPlanScreen(container, db) {
     });
   }
 
-  // Перевод из ПУЛА в ЦЕЛЬ
   const btnOpenPoolTransfer = document.getElementById('btn-open-pool-transfer');
   if (btnOpenPoolTransfer) {
     btnOpenPoolTransfer.addEventListener('click', () => {
@@ -518,7 +521,6 @@ export async function renderPlanScreen(container, db) {
     });
   }
 
-  // Перевод из ЦЕЛИ в ПУЛ (в свободные деньги)
   container.querySelectorAll('[data-action="open-transfer"]').forEach(btn => {
     btn.addEventListener('click', () => {
       openTransferGoalId = btn.dataset.goalId;
