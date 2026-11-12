@@ -120,8 +120,12 @@ export async function renderBudgetScreen(container, db) {
       `;
     }
 
+    // Расчет остатков
     const factBalance = totalFactIncome - totalFactExpense;
+    const planBalance = plan.totalIncome - plan.totalExpense - (plan.totalContribution || 0);
+    
     const isFactNegative = factBalance < 0;
+    const isPlanNegative = planBalance < 0;
 
     let summaryHtml = `
       <div class="budget-summary" style="background:var(--card-2); padding:16px; border-radius:12px; margin-bottom:16px;">
@@ -139,12 +143,14 @@ export async function renderBudgetScreen(container, db) {
         </div>
         <div class="summary-row">
           <span class="muted">Взносы в цели:</span>
-          <span>-${formatMoney(plan.totalContribution)}</span>
+          <span>-${formatMoney(plan.totalContribution || 0)}</span>
         </div>
         <div class="summary-row" style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-weight:bold;">
-          <span>Фактический остаток:</span>
-          <span style="color: ${isFactNegative ? 'var(--red)' : 'var(--green)'}">
-            ${formatMoney(factBalance)} ₽
+          <span>Остаток:</span>
+          <span>
+            <span style="color: ${isPlanNegative ? 'var(--red)' : 'var(--green)'}">${formatMoney(planBalance)}</span>
+            /
+            <span style="color: ${isFactNegative ? 'var(--red)' : 'var(--green)'}">${formatMoney(factBalance)}</span> ₽
           </span>
         </div>
       </div>
