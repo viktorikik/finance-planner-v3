@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлен детальный график взносов: Взнос + Проценты = Итого на конец месяца.
+   Улучшенный график взносов: колонки Дата | Взнос+Проценты | Итого.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -347,7 +347,7 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
-      // Форматирование списка планов
+      // НОВЫЙ ФОРМАТ ГРАФИКА ВЗНОСОВ
       const visibleSchedule = isPlansExpanded ? schedule : schedule.slice(0, 3);
       const plansHtml = schedule.length > 0 ? `
         <div class="goal-plans-container">
@@ -358,25 +358,35 @@ export async function renderPlanScreen(container, db) {
           <div class="plans-list ${isAmountHidden ? 'blurred' : ''}">
             ${visibleSchedule.map(row => {
               const [y, m] = row.month.split('-');
-              const dateStr = `${m}.${y.slice(2)}`;
+              const monthName = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'short' });
+              const yearShort = y.slice(2);
               
               return `
-                <div style="display: flex; flex-direction: column; padding: 8px 0; border-bottom: 1px solid var(--border);">
-                  <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-                    <span style="font-weight: 600; font-size: 14px; color: var(--text);">${dateStr}</span>
-                    <span style="font-weight: 700; font-size: 15px;">${formatRub(row.total)} ₽</span>
-                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 16px; padding: 0 8px;">×</button>` : '<span style="width: 32px;"></span>'}
+                <div style="display: grid; grid-template-columns: 65px 1fr auto; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); gap: 8px;">
+                  
+                  <!-- Дата -->
+                  <div style="display: flex; flex-direction: column;">
+                    <span style="font-weight: 600; font-size: 14px; color: var(--text); text-transform: capitalize;">${monthName}</span>
+                    <span style="font-size: 11px; color: var(--muted);">'${yearShort}</span>
                   </div>
-                  <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px;">
-                    <span>Взнос: ${formatRub(row.contribution)} ₽</span>
-                    <span>Проценты: <span style="color: var(--green);">+${formatRub(row.interest)}</span> ₽</span>
+                  
+                  <!-- Детали -->
+                  <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-size: 12px; color: var(--muted);">Взнос: ${formatRub(row.contribution)} ₽</span>
+                    <span style="font-size: 12px; color: var(--green);">Проценты: +${formatRub(row.interest)} ₽</span>
+                  </div>
+                  
+                  <!-- Итого + Кнопка удаления -->
+                  <div style="display: flex; align-items: center; gap: 8px; justify-content: flex-end;">
+                    <span style="font-weight: 700; font-size: 15px; white-space: nowrap;">${formatRub(row.total)} ₽</span>
+                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 20px; padding: 0 4px; display: flex; align-items: center; height: 24px;">×</button>` : '<span style="width: 20px;"></span>'}
                   </div>
                 </div>
               `;
             }).join('')}
           </div>
           ${schedule.length > 3 ? `
-            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 8px;">
+            <button type="button" class="btn-text toggle-more-plans-btn" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 12px;">
               ${isPlansExpanded ? 'Скрыть лишние' : `Показать все (${schedule.length})`}
             </button>
           ` : ''}
