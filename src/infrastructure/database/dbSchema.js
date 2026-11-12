@@ -1,10 +1,10 @@
 /* ==========================================================================
-   Схема базы данных IndexedDB (модель v12.0).
-   Добавлена таблица actualTransactions для учета факта в бюджете.
+   Схема базы данных IndexedDB (модель v13.0).
+   Добавлена таблица categories для управления категориями.
    ========================================================================== */
 
 export const DB_NAME = 'finance-planner-db';
-export const DB_VERSION = 12; // Версия поднята для добавления actualTransactions
+export const DB_VERSION = 13;
 
 export const STORES = {
   goals: {
@@ -123,6 +123,14 @@ export const STORES = {
   settings: {
     keyPath: 'id',
     indexes: []
+  },
+  categories: {
+    keyPath: 'id',
+    indexes: [
+      { name: 'type', keyPath: 'type' },
+      { name: 'isArchived', keyPath: 'isArchived' },
+      { name: 'sortOrder', keyPath: 'sortOrder' }
+    ]
   },
   meta: {
     keyPath: 'id',
