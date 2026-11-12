@@ -5,14 +5,14 @@ import { renderPlanScreen } from '../ui/screens/plan/PlanScreen.js';
 import { renderCalendarScreen } from '../ui/screens/calendar/CalendarScreen.js';
 import { renderStatisticsScreen } from '../ui/screens/statistics/StatisticsScreen.js';
 import { renderSettingsScreen } from '../ui/screens/settings/SettingsScreen.js';
-import { renderBudgetScreen } from '../ui/screens/budget/BudgetScreen.js'; // <-- НОВЫЙ ИМПОРТ
+import { renderBudgetScreen } from '../ui/screens/budget/BudgetScreen.js';
 
 const ROUTES = {
   plan: renderPlanScreen,
+  budget: renderBudgetScreen,
   calendar: renderCalendarScreen,
   statistics: renderStatisticsScreen,
   settings: renderSettingsScreen,
-  budget: renderBudgetScreen, // <-- НОВЫЙ РОУТ
 };
 
 const DEFAULT_ROUTE = 'plan';
@@ -34,10 +34,10 @@ export async function render(route) {
   if (!container) return;
 
   const renderer = ROUTES[route] || ROUTES[DEFAULT_ROUTE];
-  container.innerHTML = '<div class="loading">Загрузка...</div>'; 
-  
+  container.innerHTML = '<div class="loading">Загрузка...</div>';
+
   try {
-    container.innerHTML = ''; 
+    container.innerHTML = '';
     await renderer(container, dbInstance);
   } catch (err) {
     console.error(err);
@@ -46,11 +46,8 @@ export async function render(route) {
 }
 
 function updateActiveTabs(route) {
-  // Если мы на экране бюджета, визуально оставляем активной вкладку "План"
-  const visualRoute = route === 'budget' ? 'plan' : route;
-  
   document.querySelectorAll('[data-tab]').forEach(el => {
-    el.classList.toggle('active', el.dataset.tab === visualRoute);
+    el.classList.toggle('active', el.dataset.tab === route);
   });
 }
 
