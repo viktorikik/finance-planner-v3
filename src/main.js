@@ -1,13 +1,243 @@
 /* ==========================================================================
-   Точка входа приложения.
-   Порядок: стили → bootstrap.
-   bootstrap сам разберётся с DOMContentLoaded.
+   Планировщик финансов v4 — стили.
    ========================================================================== */
-import './ui/styles/main.css';
-import { bootstrap } from './app/bootstrap.js';
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', bootstrap);
-} else {
-  bootstrap();
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  color-scheme: dark;
+  --bg: #0f1117;
+  --card: #1a1d27;
+  --card-2: #232733;
+  --border: #2d3242;
+  --text: #e8eaf0;
+  --muted: #8b91a3;
+  --accent: #7c5cff;
+  --accent-hover: #9179ff;
+  --green: #3ddc97;
+  --red: #ff5c7c;
+  --yellow: #ffc857;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background-image:
+    radial-gradient(circle at 10% 0%, rgba(124,92,255,0.10), transparent 40%),
+    radial-gradient(circle at 90% 100%, rgba(61,220,151,0.06), transparent 40%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app { max-width: 680px; margin: 0 auto; min-height: calc(100vh - 32px); display: flex; flex-direction: column; }
+
+.app-header { text-align: center; margin-bottom: 20px; }
+.app-header h1 { font-size: 26px; font-weight: 700; background: linear-gradient(135deg, #fff 0%, #a89cff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.app-header .subtitle { color: var(--muted); font-size: 13px; margin-top: 4px; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
+.tab { flex: 1; padding: 10px 8px; border: none; background: transparent; color: var(--muted); font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; border-radius: 8px; transition: all 0.15s; }
+.tab:hover { color: var(--text); }
+.tab.active { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(124,92,255,0.3); }
+
+.screen { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+.blurred { filter: blur(6px); user-select: none; pointer-events: none; transition: filter 0.2s; }
+
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
+.card h2 { font-size: 18px; margin-bottom: 16px; font-weight: 600; }
+
+.create-goal-form { display: flex; flex-direction: column; gap: 8px; }
+.form-row-bottom { display: flex; gap: 8px; }
+.form-row-bottom select { flex: 1; min-width: 0; }
+.form-row-bottom input { flex: 1; min-width: 0; }
+
+input, select {
+  background: var(--card-2); border: 1px solid var(--border); border-radius: 10px;
+  color: var(--text); padding: 12px 14px; font-family: inherit; font-size: 16px; outline: none;
+  transition: border-color 0.2s; width: 100%;
+}
+input:focus { border-color: var(--accent); }
+input::placeholder { color: #5b6175; }
+
+input[type="month"] {
+  -webkit-appearance: none; appearance: none; min-height: 46px;
+  display: flex; align-items: center;
+}
+input[type="month"]::-webkit-datetime-edit { color: var(--text); }
+
+.btn { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 12px 18px; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.btn:hover { background: var(--accent-hover); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-small { padding: 10px 16px; font-size: 14px; line-height: 1; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+.btn-outline:hover { background: var(--card-2); border-color: var(--accent); }
+.btn-text { background: none; border: none; color: var(--accent); cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600; padding: 4px; }
+
+.btn-icon { background: transparent; border: none; cursor: pointer; font-size: 20px; line-height: 1; padding: 4px; border-radius: 6px; transition: all 0.15s; }
+.btn-icon.delete { color: var(--muted); }
+.btn-icon.delete:hover { color: var(--red); background: rgba(255, 92, 124, 0.1); }
+.btn-icon.achieve { color: var(--green); }
+.btn-icon.achieve:hover { background: rgba(61, 220, 151, 0.1); }
+
+.filter-tabs { display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 4px; }
+.filter-tab { flex: 1; padding: 8px; border: none; background: transparent; color: var(--muted); font-family: inherit; font-weight: 600; font-size: 13px; cursor: pointer; border-radius: 8px; transition: all 0.15s; }
+.filter-tab.active { background: var(--border); color: var(--text); }
+
+/* Список целей */
+.goal-item { background: var(--card-2); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; border: 1px solid transparent; }
+.goal-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+.goal-header strong { font-size: 16px; }
+.goal-header-amount { font-size: 13px; font-weight: 600; color: var(--text); }
+
+.goal-body { display: flex; flex-direction: column; }
+.goal-progress { font-size: 13px; color: var(--muted); margin-bottom: 8px; text-align: right; }
+.percent { color: var(--accent); font-weight: 600; }
+.progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
+.progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
+
+/* Кнопки действий */
+.goal-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.goal-actions-grid > *:only-child { grid-column: span 2; }
+.auto-plan-btn { background: rgba(255, 200, 87, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
+.auto-plan-btn:hover { background: rgba(255, 200, 87, 0.25); }
+
+.add-contrib-form { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.add-contrib-form input { flex: 1; min-width: 0; padding: 10px 14px; font-size: 14px; }
+.add-contrib-form button { width: 48px; padding: 10px 0; display: flex; justify-content: center; flex-shrink: 0; }
+
+.muted { color: var(--muted); font-size: 14px; text-align: center; padding: 12px; }
+.app-footer { margin-top: 20px; text-align: center; font-size: 13px; }
+.app-footer a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all 0.15s; display: inline-block; }
+.app-footer a:hover, .app-footer a.active { color: var(--accent); background: rgba(124,92,255,0.1); }
+
+.calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.calendar-nav button { background: var(--card-2); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; font-size: 20px; line-height: 1; transition: all 0.15s; font-family: inherit; }
+.calendar-nav button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.calendar-nav h2 { font-size: 17px; font-weight: 600; text-transform: capitalize; margin: 0; border: none; }
+.calendar-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+.calendar-weekday { text-align: center; font-size: 11px; color: var(--muted); font-weight: 600; padding: 4px 0; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 16px; }
+.calendar-day { aspect-ratio: 1; background: var(--card-2); border: 1px solid transparent; border-radius: 10px; color: var(--text); font-family: inherit; font-size: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 4px; transition: all 0.15s; }
+.calendar-day.other-month { background: transparent; cursor: default; pointer-events: none; }
+.calendar-day:not(.other-month):hover { background: var(--accent); color: #fff; }
+.calendar-day.today { border-color: var(--accent); }
+.calendar-day.selected { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(124, 92, 255, 0.3); }
+.calendar-day-num { font-weight: 600; line-height: 1; }
+.calendar-markers { display: flex; gap: 4px; height: 5px; align-items: center; }
+.marker { width: 5px; height: 5px; border-radius: 50%; display: inline-block; }
+.marker-plan { background: var(--accent); }
+.marker-fact { background: var(--green); }
+.calendar-day.selected .marker { background: #fff; }
+.day-section-title { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 8px; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.event-item { background: var(--card-2); border-radius: 10px; padding: 12px; margin-bottom: 8px; border-left: 3px solid transparent; }
+.event-item.event-plan { border-left-color: var(--accent); }
+.event-item.event-fact { border-left-color: var(--green); }
+.event-title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
+.event-meta { font-size: 12px; color: var(--muted); }
+
+.actions-row { display: flex; gap: 8px; margin-top: 16px; }
+.actions-row .btn { flex: 1; padding: 10px; font-size: 14px; }
+.summary-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
+
+.goal-settings-form { background: rgba(15, 17, 23, 0.6); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 12px; }
+.settings-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.settings-section:last-of-type { border-bottom: none; margin-bottom: 8px; padding-bottom: 0; }
+.settings-section h4 { font-size: 13px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 700; }
+.form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.form-group label { font-size: 13px; color: var(--muted); }
+.form-group input, .form-group select { padding: 10px 12px; font-size: 14px; background: var(--card-2); }
+
+/* ==========================================================================
+   Таблица годового прогноза
+   ========================================================================== */
+.yearly-table { display: flex; flex-direction: column; gap: 6px; width: 100%; overflow: hidden; }
+.yearly-header { display: none; }
+.yearly-row {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.yearly-row:hover { background: var(--card-2); border-color: var(--accent); }
+.yearly-row-negative { background: rgba(255, 92, 124, 0.08); border-color: rgba(255, 92, 124, 0.3); }
+.yearly-row-negative:hover { background: rgba(255, 92, 124, 0.15); }
+.yearly-row-top { display: flex; justify-content: space-between; align-items: center; }
+.yearly-month { font-weight: 600; text-transform: capitalize; color: var(--text); font-size: 15px; }
+.yearly-balance { font-weight: 700; font-size: 16px; }
+.yearly-row-bottom { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.yearly-income { color: var(--green); }
+.yearly-expense { color: var(--red); }
+.yearly-total-row { margin-top: 8px; background: var(--card-2); border: 2px solid var(--accent); font-weight: 700; cursor: default; }
+.yearly-total-row:hover { background: var(--card-2); border-color: var(--accent); }
+
+/* ==========================================================================
+   DANGER ZONE (Опасная зона)
+   ========================================================================== */
+.danger-zone { border: 2px solid var(--red); background: rgba(255, 92, 124, 0.05); border-radius: 16px; padding: 20px; margin-top: 24px; }
+.danger-zone h2 { color: var(--red); font-size: 16px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.danger-zone p { font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+.btn-danger { background: transparent; border: 1px solid var(--red); color: var(--red); border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; width: 100%; margin-bottom: 8px; }
+.btn-danger:hover { background: rgba(255, 92, 124, 0.1); }
+.btn-danger-solid { background: var(--red); border: 1px solid var(--red); color: #fff; border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; width: 100%; }
+.btn-danger-solid:hover { background: #ff7d99; }
+.btn-danger-solid:disabled { opacity: 0.4; cursor: not-allowed; background: var(--red); }
+
+/* ==========================================================================
+   MODAL (Модальные окна)
+   ========================================================================== */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+.modal-overlay.active { display: flex; }
+.modal-content {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 24px; max-width: 420px; width: 100%; max-height: 90vh; overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal-content h3 { font-size: 18px; margin-bottom: 12px; color: var(--text); }
+.modal-content p { font-size: 14px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+.modal-content .counts-list { background: var(--card-2); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+.modal-content .counts-list div { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.modal-content .counts-list div:last-child { margin-bottom: 0; }
+.modal-content .counts-list b { color: var(--red); }
+.modal-content .modal-warning { color: var(--red); font-weight: 600; font-size: 13px; margin-bottom: 16px; }
+.modal-content .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; font-size: 14px; cursor: pointer; }
+.modal-content .checkbox-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--red); cursor: pointer; }
+.modal-content .modal-input { margin-bottom: 16px; }
+.modal-content .modal-input label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.modal-content .modal-input input { width: 100%; padding: 12px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 16px; font-family: inherit; }
+.modal-content .modal-input input.valid { border-color: var(--red); }
+.modal-content .modal-actions { display: flex; gap: 8px; }
+.modal-content .modal-actions button { flex: 1; }
+
+/* ==========================================================================
+   CATEGORIES (Список категорий в настройках)
+   ========================================================================== */
+.category-group { margin-bottom: 20px; }
+.category-group-title { font-size: 13px; color: var(--muted); text-transform: uppercase; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px; }
+.category-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--card-2); border-radius: 10px; margin-bottom: 6px; font-size: 14px; }
+.category-item.archived { opacity: 0.5; }
+.category-item.archived .category-name { text-decoration: line-through; }
+.category-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.category-emoji { font-size: 18px; flex-shrink: 0; }
+.category-name { flex: 1; color: var(--text); font-weight: 500; }
+.category-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.category-actions button { background: transparent; border: none; cursor: pointer; padding: 4px; font-size: 14px; border-radius: 6px; transition: all 0.15s; color: var(--muted); }
+.category-actions button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
+
+/* ==========================================================================
+   SWIPE TO DELETE (Удаление свайпом)
+   ========================================================================== */
+.swipe-wrapper { position: relative; overflow: hidden; border-radius: 10px; }
+.swipe-item { position: relative; z-index: 2; transition: transform 0.3s ease; will-change: transform; }
+.swipe-action { position: absolute; top: 0; right: 0; height: 100%; width: 80px; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; z-index: 1; border-radius: 0 10px 10px 0; cursor: pointer; }
+.desktop-delete { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .desktop-delete { display: flex !important; }
+  .swipe-action { display: none; }
 }
