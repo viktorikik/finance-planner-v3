@@ -45,14 +45,11 @@ body {
 
 .screen { flex: 1; display: flex; flex-direction: column; gap: 16px; }
 
-/* Глазик (Скрытие сумм) */
 .blurred { filter: blur(6px); user-select: none; pointer-events: none; transition: filter 0.2s; }
 
-/* Карточки */
 .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
 .card h2 { font-size: 18px; margin-bottom: 16px; font-weight: 600; }
 
-/* Формы */
 .create-goal-form { display: flex; flex-direction: column; gap: 8px; }
 .form-row-bottom { display: flex; gap: 8px; }
 .form-row-bottom select { flex: 1; min-width: 0; }
@@ -66,13 +63,9 @@ input, select {
 input:focus { border-color: var(--accent); }
 input::placeholder { color: #5b6175; }
 
-/* Фикс для iOS месяца */
 input[type="month"] {
-  -webkit-appearance: none;
-  appearance: none;
-  min-height: 46px;
-  display: flex;
-  align-items: center;
+  -webkit-appearance: none; appearance: none; min-height: 46px;
+  display: flex; align-items: center;
 }
 input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 
@@ -90,7 +83,6 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .btn-icon.achieve { color: var(--green); }
 .btn-icon.achieve:hover { background: rgba(61, 220, 151, 0.1); }
 
-/* Фильтр */
 .filter-tabs {
   display: flex; gap: 4px; background: var(--card); border: 1px solid var(--border);
   border-radius: 12px; padding: 4px;
@@ -102,7 +94,6 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 }
 .filter-tab.active { background: var(--border); color: var(--text); }
 
-/* Список целей */
 .goal-item { background: var(--card-2); border-radius: 16px; padding: 16px; margin-bottom: 16px; display: flex; flex-direction: column; border: 1px solid transparent; }
 .goal-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
 .goal-header strong { font-size: 16px; }
@@ -114,7 +105,6 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
 
-/* Блок планов */
 .goal-plans-container { background: rgba(15, 17, 23, 0.4); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 4px; }
 .plans-header { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; }
 .plans-list { display: flex; flex-direction: column; gap: 4px; }
@@ -123,7 +113,6 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .plan-row span { color: var(--muted); flex: 1; }
 .plan-row b { color: var(--text); margin-right: 12px; }
 
-/* Кнопки действий */
 .goal-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .goal-actions-grid > *:only-child { grid-column: span 2; }
 .auto-plan-btn { background: rgba(255, 200, 87, 0.15); color: var(--yellow); border: 1px solid var(--yellow); }
@@ -133,13 +122,11 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .add-contrib-form input { flex: 1; min-width: 0; padding: 10px 14px; font-size: 14px; }
 .add-contrib-form button { width: 48px; padding: 10px 0; display: flex; justify-content: center; flex-shrink: 0; }
 
-/* Утилиты */
 .muted { color: var(--muted); font-size: 14px; text-align: center; padding: 12px; }
 .app-footer { margin-top: 20px; text-align: center; font-size: 13px; }
 .app-footer a { color: var(--muted); text-decoration: none; padding: 6px 12px; border-radius: 8px; transition: all 0.15s; display: inline-block; }
 .app-footer a:hover, .app-footer a.active { color: var(--accent); background: rgba(124,92,255,0.1); }
 
-/* Календарь */
 .calendar-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .calendar-nav button { background: var(--card-2); border: 1px solid var(--border); color: var(--text); width: 40px; height: 40px; border-radius: 10px; cursor: pointer; font-size: 20px; line-height: 1; transition: all 0.15s; font-family: inherit; }
 .calendar-nav button:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -165,196 +152,151 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .event-title { font-weight: 600; margin-bottom: 4px; font-size: 14px; }
 .event-meta { font-size: 12px; color: var(--muted); }
 
+.actions-row { display: flex; gap: 8px; margin-top: 16px; }
+.actions-row .btn { flex: 1; padding: 10px; font-size: 14px; }
+.summary-row { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px; }
+
+.goal-settings-form { background: rgba(15, 17, 23, 0.6); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-top: 12px; }
+.settings-section { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+.settings-section:last-of-type { border-bottom: none; margin-bottom: 8px; padding-bottom: 0; }
+.settings-section h4 { font-size: 13px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; font-weight: 700; }
+.form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.form-group label { font-size: 13px; color: var(--muted); }
+.form-group input, .form-group select { padding: 10px 12px; font-size: 14px; background: var(--card-2); }
+
+.yearly-table { display: flex; flex-direction: column; gap: 2px; width: 100%; overflow: hidden; }
+.yearly-header, .yearly-row {
+  display: grid; grid-template-columns: 72px 1fr 1fr 96px; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 8px; font-size: 13px; font-variant-numeric: tabular-nums;
+}
+.yearly-header { background: var(--card-2); color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; padding: 8px 10px; margin-bottom: 4px; }
+.yearly-header span, .yearly-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.yearly-row { background: var(--card); border: 1px solid var(--border); cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+.yearly-row:hover { background: var(--card-2); border-color: var(--accent); }
+.yearly-row-negative { background: rgba(255, 92, 124, 0.08); border-color: rgba(255, 92, 124, 0.3); }
+.yearly-row-negative:hover { background: rgba(255, 92, 124, 0.15); }
+.yearly-month { font-weight: 600; text-transform: capitalize; color: var(--text); }
+.yearly-income { color: var(--green); text-align: right; }
+.yearly-expense { color: var(--red); text-align: right; }
+.yearly-balance { text-align: right; font-weight: 700; }
+.yearly-total-row { margin-top: 6px; background: var(--card-2); border: 1px solid var(--border); font-weight: 700; cursor: default; }
+.yearly-total-row:hover { background: var(--card-2); border-color: var(--border); }
+.yearly-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--muted); }
+
+@media (max-width: 380px) {
+  .yearly-header, .yearly-row { grid-template-columns: 56px 1fr 1fr 80px; font-size: 12px; padding: 6px 8px; gap: 4px; }
+  .yearly-header { font-size: 10px; }
+}
 
 /* ==========================================================================
-   Стили для Бюджета (Шаг C)
+   DANGER ZONE (Опасная зона)
    ========================================================================== */
-.actions-row {
-  display: flex;
-  gap: 8px;
-  margin-top: 16px;
+.danger-zone {
+  border: 2px solid var(--red);
+  background: rgba(255, 92, 124, 0.05);
+  border-radius: 16px;
+  padding: 20px;
+  margin-top: 24px;
 }
-
-.actions-row .btn {
-  flex: 1;
-  padding: 10px;
+.danger-zone h2 {
+  color: var(--red);
+  font-size: 16px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.danger-zone p { font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+.btn-danger {
+  background: transparent;
+  border: 1px solid var(--red);
+  color: var(--red);
+  border-radius: 10px;
+  padding: 12px 18px;
   font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+  margin-bottom: 8px;
 }
+.btn-danger:hover { background: rgba(255, 92, 124, 0.1); }
+.btn-danger-solid {
+  background: var(--red);
+  border: 1px solid var(--red);
+  color: #fff;
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  width: 100%;
+}
+.btn-danger-solid:hover { background: #ff7d99; }
+.btn-danger-solid:disabled { opacity: 0.4; cursor: not-allowed; background: var(--red); }
 
-.summary-row {
+/* ==========================================================================
+   MODAL (Модальные окна)
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+}
+.modal-overlay.active { display: flex; }
+.modal-content {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+  max-width: 420px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.modal-content h3 { font-size: 18px; margin-bottom: 12px; color: var(--text); }
+.modal-content p { font-size: 14px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
+.modal-content .counts-list { background: var(--card-2); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+.modal-content .counts-list div { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.modal-content .counts-list div:last-child { margin-bottom: 0; }
+.modal-content .counts-list b { color: var(--red); }
+.modal-content .modal-warning { color: var(--red); font-weight: 600; font-size: 13px; margin-bottom: 16px; }
+.modal-content .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; font-size: 14px; cursor: pointer; }
+.modal-content .checkbox-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--red); cursor: pointer; }
+.modal-content .modal-input { margin-bottom: 16px; }
+.modal-content .modal-input label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.modal-content .modal-input input { width: 100%; padding: 12px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 16px; font-family: inherit; }
+.modal-content .modal-input input.valid { border-color: var(--red); }
+.modal-content .modal-actions { display: flex; gap: 8px; }
+.modal-content .modal-actions button { flex: 1; }
+
+/* ==========================================================================
+   CATEGORIES (Список категорий в настройках)
+   ========================================================================== */
+.category-group { margin-bottom: 20px; }
+.category-group-title { font-size: 13px; color: var(--muted); text-transform: uppercase; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px; }
+.category-item {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--card-2);
+  border-radius: 10px;
   margin-bottom: 6px;
   font-size: 14px;
 }
-
-/* ==========================================================================
-   Стили для формы настроек цели (Шаг C)
-   ========================================================================== */
-.goal-settings-form {
-  background: rgba(15, 17, 23, 0.6);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  margin-top: 12px;
-}
-
-.settings-section {
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.settings-section:last-of-type {
-  border-bottom: none;
-  margin-bottom: 8px;
-  padding-bottom: 0;
-}
-
-.settings-section h4 {
-  font-size: 13px;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 10px;
-  font-weight: 700;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.form-group label {
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.form-group input, .form-group select {
-  padding: 10px 12px;
-  font-size: 14px;
-  background: var(--card-2);
-}
-
-/* ==========================================================================
-   Таблица годового прогноза (Шаг D)
-   ========================================================================== */
-.yearly-table {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  overflow: hidden;
-}
-
-.yearly-header,
-.yearly-row {
-  display: grid;
-  grid-template-columns: 72px 1fr 1fr 96px;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums; /* Чтобы цифры не "плясали" */
-}
-
-.yearly-header {
-  background: var(--card-2);
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 8px 10px;
-  margin-bottom: 4px;
-}
-
-.yearly-header span,
-.yearly-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.yearly-row {
-  background: var(--card);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.yearly-row:hover {
-  background: var(--card-2);
-  border-color: var(--accent);
-}
-
-.yearly-row-negative {
-  background: rgba(255, 92, 124, 0.08);
-  border-color: rgba(255, 92, 124, 0.3);
-}
-
-.yearly-row-negative:hover {
-  background: rgba(255, 92, 124, 0.15);
-}
-
-.yearly-month {
-  font-weight: 600;
-  text-transform: capitalize;
-  color: var(--text);
-}
-
-.yearly-income {
-  color: var(--green);
-  text-align: right;
-}
-
-.yearly-expense {
-  color: var(--red);
-  text-align: right;
-}
-
-.yearly-balance {
-  text-align: right;
-  font-weight: 700;
-}
-
-.yearly-total-row {
-  margin-top: 6px;
-  background: var(--card-2);
-  border: 1px solid var(--border);
-  font-weight: 700;
-  cursor: default;
-}
-
-.yearly-total-row:hover {
-  background: var(--card-2);
-  border-color: var(--border);
-}
-
-.yearly-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
-  font-size: 11px;
-  color: var(--muted);
-}
-
-/* Адаптив для узких экранов */
-@media (max-width: 380px) {
-  .yearly-header,
-  .yearly-row {
-    grid-template-columns: 56px 1fr 1fr 80px;
-    font-size: 12px;
-    padding: 6px 8px;
-    gap: 4px;
-  }
-  .yearly-header {
-    font-size: 10px;
-  }
-}
+.category-item.archived { opacity: 0.5; }
+.category-item.archived .category-name { text-decoration: line-through; }
+.category-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.category-emoji { font-size: 18px; flex-shrink: 0; }
+.category-name { flex: 1; color: var(--text); font-weight: 500; }
+.category-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.category-actions button { background: transparent; border: none; cursor: pointer; padding: 4px; font-size: 14px; border-radius: 6px; transition: all 0.15s; color: var(--muted); }
+.category-actions button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
