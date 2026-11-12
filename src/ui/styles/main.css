@@ -300,3 +300,55 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .category-actions { display: flex; gap: 4px; flex-shrink: 0; }
 .category-actions button { background: transparent; border: none; cursor: pointer; padding: 4px; font-size: 14px; border-radius: 6px; transition: all 0.15s; color: var(--muted); }
 .category-actions button:hover { background: rgba(255, 255, 255, 0.05); color: var(--text); }
+
+
+/* ... (все предыдущие стили остаются без изменений) ... */
+
+/* ==========================================================================
+   SWIPE TO DELETE (Удаление свайпом)
+   ========================================================================== */
+.swipe-wrapper {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.swipe-item {
+  position: relative;
+  z-index: 2;
+  transition: transform 0.3s ease;
+  will-change: transform;
+}
+
+.swipe-action {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 80px;
+  background: var(--red);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 1;
+  border-radius: 0 10px 10px 0;
+  cursor: pointer;
+}
+
+/* Скрываем иконку удаления на мобильных (где работает свайп) */
+.desktop-delete {
+  display: none;
+}
+
+/* Показываем иконку удаления только на устройствах с мышью */
+@media (hover: hover) and (pointer: fine) {
+  .desktop-delete {
+    display: flex !important;
+  }
+  .swipe-action {
+    display: none; /* На десктопе свайп не нужен */
+  }
+}
