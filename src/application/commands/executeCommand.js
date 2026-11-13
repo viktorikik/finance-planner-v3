@@ -1,8 +1,10 @@
 /* ==========================================================================
    Исполнитель команд.
+   С Bатча 2: сохранения и удаления проходят через saveWithSync/deleteWithSync.
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
 import { STORES } from '../../infrastructure/database/dbSchema.js';
+import { saveWithSync, deleteWithSync } from '../../sync/entitySync.js';
 import { planContribution } from '../../domain/money/contributions.js';
 import { planMoneyTransfer } from '../../domain/money/operations.js';
 import { planMovementReversal } from '../../domain/money/reversals.js';
@@ -40,13 +42,14 @@ function burnGoalMoney(goalId, moneyEntries) {
 export async function executeCommand(db, command) {
   const { commandId, commandType, payload } = command;
 
-  let stores = ['processedCommands', 'auditLog', 'goals', 'plannedOperations'];
-  
+  // syncOutbox нужен в базовой транзакции всегда — чтобы sync-aware put/delete работали.
+  let stores = ['processedCommands', 'auditLog', 'goals', 'plannedOperations', 'syncOutbox'];
+
   if (
-    commandType.startsWith('contribution') || 
-    commandType === 'money.transfer' || 
-    commandType === 'money.reverse' || 
-    commandType === 'goal.delete' || 
+    commandType.startsWith('contribution') ||
+    commandType === 'money.transfer' ||
+    commandType === 'money.reverse' ||
+    commandType === 'goal.delete' ||
     commandType === 'goal.achieve' ||
     commandType === 'plannedOperation.generate' ||
     commandType === 'actualIncome.create'
@@ -54,13 +57,12 @@ export async function executeCommand(db, command) {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes', 'settings');
   }
 
-  // Добавляем таблицы для пересчета при обновлении планового взноса
   if (commandType === 'plannedOperation.update') {
     stores.push('moneyEntries', 'settings');
   }
 
   if (commandType.startsWith('plannedTransaction.')) {
-    stores.push('plannedTransactions', 'actualTransactions'); 
+    stores.push('plannedTransactions', 'actualTransactions');
   }
 
   if (commandType.startsWith('actualTransaction.')) {
@@ -79,7 +81,6 @@ export async function executeCommand(db, command) {
     stores = [...new Set([...stores, ...Object.keys(STORES)])];
   }
 
-  // Защита от дублирования таблиц в транзакции
   stores = [...new Set(stores)];
 
   const tx = db.transaction(stores, 'readwrite');
@@ -88,9 +89,9 @@ export async function executeCommand(db, command) {
     const existingCommand = await getFromStore('processedCommands', commandId, tx);
     if (existingCommand) throw new DuplicateCommandError(`Команда ${commandId} уже выполнена`);
 
-    let plan = { 
-      newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [], 
-      newActualIncomes: [], updatedEntries: [], updatedMovements: [], 
+    let plan = {
+      newEntries: [], newMovements: [], newGoals: [], newPlannedOperations: [],
+      newActualIncomes: [], updatedEntries: [], updatedMovements: [],
       newPlannedTransactions: [], newActualTransactions: [],
       newCategories: [], newSettings: []
     };
@@ -141,11 +142,11 @@ export async function executeCommand(db, command) {
         };
         plan = { newGoals: [newGoal] };
         break;
-      
+
       case 'goal.updateSettings':
         const goalToUpdate = await getFromStore('goals', payload.goalId, tx);
         if (!goalToUpdate) throw new Error('Цель не найдена');
-        
+
         const updatedGoalSettings = {
           ...goalToUpdate,
           targetAmountMinor: payload.targetAmountMinor !== undefined ? Math.round(payload.targetAmountMinor) : goalToUpdate.targetAmountMinor,
@@ -169,49 +170,46 @@ export async function executeCommand(db, command) {
       case 'plannedOperation.update': {
         const opToUpdate = await getFromStore('plannedOperations', payload.operationId, tx);
         if (!opToUpdate) throw new Error('Операция не найдена');
-        
+
         const newAmount = Math.round(payload.plannedAmountMinor);
         const updatedOp = { ...opToUpdate, plannedAmountMinor: newAmount, updatedAt: new Date().toISOString() };
         plan.newPlannedOperations.push(updatedOp);
-        
+
         if (payload.recalculateRest) {
           const goal = await getFromStore('goals', opToUpdate.goalId, tx);
           if (goal && goal.deadlineMonth) {
             const allOps = await getAllFromStore('plannedOperations', tx);
             const goalOps = allOps.filter(o => o.goalId === goal.id && o.state === 'scheduled');
-            
+
             const futureOps = goalOps.filter(o => o.plannedMonth > opToUpdate.plannedMonth);
-            
+
             if (futureOps.length > 0) {
               const allEntries = await getAllFromStore('moneyEntries', tx);
               const currentBalance = calculateGoalBalance(goal.id, allEntries);
-              
+
               const pastOps = goalOps.filter(o => o.plannedMonth <= opToUpdate.plannedMonth);
               const pastSum = pastOps.reduce((sum, o) => sum + (o.id === opToUpdate.id ? newAmount : o.plannedAmountMinor), 0);
-              
+
               const simulatedBalance = currentBalance + pastSum;
-              
+
               const nextMonthDate = new Date(opToUpdate.plannedMonth + '-01');
               nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
               const nextMonthStr = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
-              
+
               if (nextMonthStr <= goal.deadlineMonth) {
                 const settingsReq = tx.objectStore('settings').get('generalInflationRate');
                 const generalInflationSetting = await new Promise((resolve) => {
-                   settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : 5);
-                   settingsReq.onerror = () => resolve(5);
+                  settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : 5);
+                  settingsReq.onerror = () => resolve(5);
                 });
-                
+
                 const tempGoal = { ...goal, startMonth: nextMonthStr };
                 const newPlan = generatePlanForGoal(tempGoal, simulatedBalance, nextMonthStr, generalInflationSetting);
-                
+
                 for (const op of futureOps) {
-                  await new Promise((resolve, reject) => {
-                    const req = tx.objectStore('plannedOperations').delete(op.id);
-                    req.onsuccess = resolve; req.onerror = () => reject(req.error);
-                  });
+                  await deleteWithSync(tx, 'plannedOperations', op.id);
                 }
-                
+
                 if (newPlan.newPlannedOperations) {
                   plan.newPlannedOperations.push(...newPlan.newPlannedOperations);
                 }
@@ -221,46 +219,40 @@ export async function executeCommand(db, command) {
         }
         break;
       }
-      
+
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
         if (!goalForGen) throw new Error('Цель не найдена');
         const allEntries = await getAllFromStore('moneyEntries', tx);
         const currentBalance = calculateGoalBalance(goalForGen.id, allEntries);
-        
+
         const settingsReq = tx.objectStore('settings').get('generalInflationRate');
         const generalInflationSetting = await new Promise((resolve) => {
-           settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : 5);
-           settingsReq.onerror = () => resolve(5);
+          settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : 5);
+          settingsReq.onerror = () => resolve(5);
         });
         plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth, generalInflationSetting);
         break;
-      
+
       case 'plannedOperation.delete':
-        await new Promise((resolve, reject) => {
-          const req = tx.objectStore('plannedOperations').delete(payload.operationId);
-          req.onsuccess = resolve; req.onerror = () => reject(req.error);
-        });
+        await deleteWithSync(tx, 'plannedOperations', payload.operationId);
         break;
-      
+
       case 'plannedOperation.clearForGoal':
         const allOpsForGoal = await getAllFromStore('plannedOperations', tx);
         const opsToDelete = allOpsForGoal.filter(op => op.goalId === payload.goalId);
         for (const op of opsToDelete) {
-          await new Promise((resolve, reject) => {
-            const req = tx.objectStore('plannedOperations').delete(op.id);
-            req.onsuccess = resolve; req.onerror = () => reject(req.error);
-          });
+          await deleteWithSync(tx, 'plannedOperations', op.id);
         }
         break;
-      
+
       case 'goal.achieve':
         const goalToAchieve = await getFromStore('goals', payload.goalId, tx);
         if (!goalToAchieve) throw new Error('Цель не найдена');
         plan.newEntries = burnGoalMoney(payload.goalId, state.moneyEntries);
         plan.newGoals.push({ ...goalToAchieve, status: 'achieved', achievedAt: new Date().toISOString().slice(0, 10) });
         break;
-      
+
       case 'goal.delete':
         const goalToDelete = await getFromStore('goals', payload.goalId, tx);
         if (!goalToDelete) throw new Error('Цель не найдена');
@@ -277,69 +269,57 @@ export async function executeCommand(db, command) {
             plan.newEntries = burnGoalMoney(payload.goalId, state.moneyEntries);
           }
         }
-        await new Promise((resolve, reject) => {
-          const req = tx.objectStore('goals').delete(payload.goalId);
-          req.onsuccess = resolve; req.onerror = () => reject(req.error);
-        });
+        await deleteWithSync(tx, 'goals', payload.goalId);
         break;
-      
+
       case 'plannedTransaction.create':
         plan = planPlannedTransactionCreate(payload);
         break;
-      
+
       case 'plannedTransaction.update':
         const existingTx = await getFromStore('plannedTransactions', payload.id, tx);
         if (!existingTx) throw new Error('Транзакция не найдена');
         plan = planPlannedTransactionUpdate(payload, existingTx);
         break;
-      
+
       case 'plannedTransaction.delete':
         const allFactsToUnlink = await getAllFromStore('actualTransactions', tx);
         const linkedFacts = allFactsToUnlink.filter(f => f.plannedTransactionId === payload.id);
         for (const fact of linkedFacts) {
-          await putIntoStore('actualTransactions', { ...fact, plannedTransactionId: null }, tx);
+          await saveWithSync(tx, 'actualTransactions', { ...fact, plannedTransactionId: null });
         }
-        await new Promise((resolve, reject) => {
-          const req = tx.objectStore('plannedTransactions').delete(payload.id);
-          req.onsuccess = resolve; req.onerror = () => reject(req.error);
-        });
+        await deleteWithSync(tx, 'plannedTransactions', payload.id);
         break;
-      
+
       case 'actualTransaction.create':
         plan = planActualTransactionCreate(payload);
         break;
-      
+
       case 'actualTransaction.delete':
-        await new Promise((resolve, reject) => {
-          const req = tx.objectStore('actualTransactions').delete(payload.id);
-          req.onsuccess = resolve; req.onerror = () => reject(req.error);
-        });
+        await deleteWithSync(tx, 'actualTransactions', payload.id);
         break;
 
       case 'settings.update':
         const newSetting = planSettingsUpdate(payload.id, payload.value);
         plan.newSettings.push(newSetting);
         break;
-      
+
       case 'category.create':
         const newCat = planCategoryCreate(payload);
         plan.newCategories.push(newCat);
         break;
-      
+
       case 'category.update':
         const existingCat = await getFromStore('categories', payload.id, tx);
         if (!existingCat) throw new CategoryNotFoundError();
         plan.newCategories.push(planCategoryUpdate(existingCat, payload));
         break;
-      
+
       case 'category.delete':
         const catToDelete = await getFromStore('categories', payload.id, tx);
         if (!catToDelete) throw new CategoryNotFoundError();
         validateCategoryDeletion(catToDelete, state);
-        await new Promise((resolve, reject) => {
-          const req = tx.objectStore('categories').delete(payload.id);
-          req.onsuccess = resolve; req.onerror = () => reject(req.error);
-        });
+        await deleteWithSync(tx, 'categories', payload.id);
         break;
 
       case 'data.clearFinancials': {
@@ -354,9 +334,13 @@ export async function executeCommand(db, command) {
             req.onsuccess = resolve; req.onerror = () => reject(req.error);
           });
         }
+        // Флаг для синхронизатора: при следующем sync удалить все данные пользователя на сервере.
+        await putIntoStore('syncMeta', {
+          id: 'forceCloudReset', value: true, at: new Date().toISOString()
+        }, tx);
         break;
       }
-      
+
       case 'data.factoryReset': {
         const allStores = Object.keys(STORES).filter(s => s !== 'processedCommands');
         for (const store of allStores) {
@@ -365,13 +349,17 @@ export async function executeCommand(db, command) {
             req.onsuccess = resolve; req.onerror = () => reject(req.error);
           });
         }
-        
+
         const { planCategoriesSeed, planSettingsSeed } = await import('../../infrastructure/migration/migrateV12toV13.js');
         const defaultCats = planCategoriesSeed();
-        for (const cat of defaultCats) await putIntoStore('categories', cat, tx);
-        
+        for (const cat of defaultCats) await saveWithSync(tx, 'categories', cat);
+
         const defaultSets = planSettingsSeed();
-        for (const set of defaultSets) await putIntoStore('settings', set, tx);
+        for (const set of defaultSets) await saveWithSync(tx, 'settings', set);
+
+        await putIntoStore('syncMeta', {
+          id: 'forceCloudReset', value: true, at: new Date().toISOString()
+        }, tx);
         break;
       }
 
@@ -381,7 +369,7 @@ export async function executeCommand(db, command) {
 
     const saveItems = async (storeName, items) => {
       if (items && items.length > 0) {
-        for (const item of items) await putIntoStore(storeName, item, tx);
+        for (const item of items) await saveWithSync(tx, storeName, item);
       }
     };
 
@@ -406,7 +394,7 @@ export async function executeCommand(db, command) {
     return { success: true, data: plan };
 
   } catch (error) {
-    try { tx.abort(); } catch (e) {} 
+    try { tx.abort(); } catch (e) {}
     throw error;
   }
 }
