@@ -1,6 +1,7 @@
 /* ==========================================================================
    Экран «Бюджет». Управление доходами, расходами и фактом + Годовой прогноз
    + Аналитика по категориям (из БД). Формы вынесены в модальные окна.
+   Выбор месяца вынесен в модальное окно для решения проблемы вылета.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -11,14 +12,17 @@ import { calculateCategoryAnalytics } from '../../../domain/budget/categoryAnaly
 import { generateId } from '../../../domain/shared/ids.js';
 
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
-
-// Функция для компактного отображения больших чисел в таблице
 const formatCompactMoney = (minor) => {
   const rub = minor / 100;
   if (Math.abs(rub) >= 1000000) return (rub / 1000000).toFixed(1) + ' млн';
   if (Math.abs(rub) >= 100000) return Math.round(rub / 1000) + ' тыс.';
   return rub.toLocaleString('ru-RU');
 };
+
+function formatMonthTitle(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+}
 
 // SVG-иконки
 const ICON_EDIT = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
@@ -120,7 +124,6 @@ export async function renderBudgetScreen(container, db) {
       `;
     }
 
-    // Расчет остатков
     const factBalance = totalFactIncome - totalFactExpense;
     const planBalance = plan.totalIncome - plan.totalExpense - (plan.totalContribution || 0);
     
@@ -197,7 +200,9 @@ export async function renderBudgetScreen(container, db) {
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
           <h2>Месяц</h2>
-          <input type="month" id="budget-month-picker" value="${currentMonth}" style="width:auto; padding:8px; font-size:14px;">
+          <button class="btn btn-outline" id="btn-pick-month" style="width:auto; padding:8px 16px; font-size:14px; text-transform: capitalize;">
+            ${formatMonthTitle(currentMonth)}
+          </button>
         </div>
 
         ${summaryHtml}
@@ -234,12 +239,58 @@ export async function renderBudgetScreen(container, db) {
       <div class="modal-overlay" id="form-modal">
         <div class="modal-content" id="form-modal-content"></div>
       </div>
+      
+      <div class="modal-overlay" id="month-modal">
+        <div class="modal-content">
+          <h3>Выберите месяц</h3>
+          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+            <select id="month-select-year" style="flex: 1; padding: 12px;"></select>
+            <select id="month-select-month" style="flex: 2; padding: 12px;"></select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-outline" id="btn-month-cancel">Отмена</button>
+            <button class="btn" id="btn-month-apply">Применить</button>
+          </div>
+        </div>
+      </div>
     `;
 
     initSwipe(container);
 
-    document.getElementById('budget-month-picker').addEventListener('change', (e) => {
-      currentMonth = e.target.value;
+    // Логика выбора месяца
+    document.getElementById('btn-pick-month').addEventListener('click', () => {
+      const modal = document.getElementById('month-modal');
+      const yearSelect = document.getElementById('month-select-year');
+      const monthSelect = document.getElementById('month-select-month');
+
+      const currentY = parseInt(currentMonth.split('-')[0], 10);
+      const currentM = parseInt(currentMonth.split('-')[1], 10);
+
+      // Заполняем годы
+      yearSelect.innerHTML = '';
+      for (let y = now.getFullYear() - 2; y <= now.getFullYear() + 5; y++) {
+        yearSelect.innerHTML += `<option value="${y}" ${y === currentY ? 'selected' : ''}>${y}</option>`;
+      }
+
+      // Заполняем месяцы
+      const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+      monthSelect.innerHTML = '';
+      months.forEach((m, i) => {
+        monthSelect.innerHTML += `<option value="${i + 1}" ${i + 1 === currentM ? 'selected' : ''}>${m}</option>`;
+      });
+
+      modal.classList.add('active');
+    });
+
+    document.getElementById('btn-month-cancel').addEventListener('click', () => {
+      document.getElementById('month-modal').classList.remove('active');
+    });
+
+    document.getElementById('btn-month-apply').addEventListener('click', () => {
+      const y = document.getElementById('month-select-year').value;
+      const m = document.getElementById('month-select-month').value;
+      currentMonth = `${y}-${String(m).padStart(2, '0')}`;
+      document.getElementById('month-modal').classList.remove('active');
       render();
     });
 
