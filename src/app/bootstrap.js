@@ -1,6 +1,6 @@
 /* ==========================================================================
    Инициализация приложения.
-   Открывает БД, миграцию, проверяет сессию Supabase, запускает роутер.
+   Добавлен запуск Realtime-менеджера.
    ========================================================================== */
 import { openDB } from '../infrastructure/database/db.js';
 import { runMigrationIfNeeded } from '../infrastructure/migration/runMigration.js';
@@ -8,6 +8,7 @@ import { initRouter, navigate, setAuthenticated } from './router.js';
 import { registerServiceWorker } from '../pwa/registerServiceWorker.js';
 import { getCurrentSession, onAuthStateChange } from '../auth/authService.js';
 import { startAutoSync } from '../sync/syncManager.js';
+import { startRealtime, stopRealtime } from '../sync/realtimeManager.js'; // <-- НОВОЕ
 
 export async function bootstrap() {
   console.log('[bootstrap] app started');
@@ -43,21 +44,20 @@ export async function bootstrap() {
       if (event === 'SIGNED_IN' && nowAuthed) {
         navigate('plan');
         try { startAutoSync(db); } catch (e) { console.warn('[bootstrap] sync start error:', e); }
+        try { startRealtime(db); } catch (e) { console.warn('[bootstrap] realtime start error:', e); } // <-- НОВОЕ
       } else if (event === 'SIGNED_OUT') {
         navigate('login');
+        stopRealtime(); // <-- НОВОЕ
       }
     });
 
     // 6. Service Worker
     await registerServiceWorker();
 
-    // 7. Запускаем фоновую синхронизацию при старте (безопасно)
+    // 7. Запускаем фоновую синхронизацию и Realtime при старте (безопасно)
     if (authed) {
-      try {
-        startAutoSync(db);
-      } catch (e) {
-        console.warn('[bootstrap] Не удалось запустить авто-синхронизацию:', e);
-      }
+      try { startAutoSync(db); } catch (e) { console.warn('[bootstrap] Не удалось запустить авто-синхронизацию:', e); }
+      try { startRealtime(db); } catch (e) { console.warn('[bootstrap] Не удалось запустить Realtime:', e); } // <-- НОВОЕ
     }
 
     console.log('[bootstrap] ready');
