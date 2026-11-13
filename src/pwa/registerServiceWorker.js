@@ -1,35 +1,36 @@
 /* ==========================================================================
-   Регистрация Service Worker.
-   В dev-режиме SW отключён: иначе кэш мешает HMR и обновлению модулей.
-   В production используется BASE_URL — гарантирует корректный scope
-   при раздаче из подпапки GitHub Pages (/finance-planner-v3/).
+   Регистрация Service Worker с автообновлением.
    ========================================================================== */
-
-/**
- * Регистрирует SW и возвращает registration (или null при неудаче).
- * Не бросает исключение — вызывающая сторона решает, что делать.
- */
 export async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) {
-    console.log('[pwa] SW not supported');
-    return null;
-  }
-
-  if (import.meta.env.DEV) {
-    console.log('[pwa] SW disabled in dev');
-    return null;
+    console.warn('[SW] Service Worker не поддерживается');
+    return;
   }
 
   try {
-    const base = import.meta.env.BASE_URL;      // '/' или '/finance-planner-v3/'
-    const swUrl = base + 'sw.js';
-    const registration = await navigator.serviceWorker.register(swUrl, {
-      scope: base,
+    const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+    console.log('[SW] Зарегистрирован:', registration.scope);
+
+    // Проверяем обновления при каждом запуске
+    registration.addEventListener('updatefound', () => {
+      const newWorker = registration.installing;
+      console.log('[SW] Найдено обновление, устанавливаем...');
+
+      newWorker.addEventListener('statechange', () => {
+        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+          // Новый SW установлен, старый ещё работает. Перезагружаем страницу.
+          console.log('[SW] Обновление готово, перезагружаем страницу...');
+          window.location.reload();
+        }
+      });
     });
-    console.log('[pwa] SW registered:', registration.scope);
-    return registration;
+
+    // Если уже есть активный SW, но он обновился, пока страница была закрыта
+    if (registration.waiting) {
+      console.log('[SW] Ожидающий SW найден, перезагружаем...');
+      window.location.reload();
+    }
   } catch (err) {
-    console.error('[pwa] SW registration failed:', err);
-    return null;
+    console.error('[SW] Ошибка регистрации:', err);
   }
 }
