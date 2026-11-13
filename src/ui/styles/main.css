@@ -461,3 +461,68 @@ body.is-auth-screen #screen {
   border-radius: 6px;
   line-height: 1.5;
 }
+
+/* =============== SETTINGS ACCORDIONS =============== */
+.settings-accordion {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+
+.settings-accordion[open] {
+  border-color: var(--accent);
+}
+
+.settings-accordion summary {
+  padding: 18px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  list-style: none; /* Убираем стандартный треугольник */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+
+.settings-accordion summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Кастомная стрелочка */
+.settings-accordion summary::after {
+  content: '▼';
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform 0.3s ease;
+}
+
+.settings-accordion[open] summary::after {
+  transform: rotate(180deg);
+  color: var(--accent);
+}
+
+.accordion-content {
+  padding: 0 20px 20px 20px;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.danger-zone-accordion {
+  border-color: rgba(255, 92, 124, 0.3);
+  background: rgba(255, 92, 124, 0.02);
+}
+.danger-zone-accordion[open] {
+  border-color: var(--red);
+}
+.danger-zone-accordion summary::after {
+  color: var(--red);
+}
