@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлена возможность редактирования суммы конкретного месяца в графике.
+   Добавлена возможность редактирования суммы взноса с пересчетом остальных.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -822,6 +822,10 @@ export async function renderPlanScreen(container, db) {
         <div class="modal-input">
           <input type="number" id="edit-op-amount" value="${currentAmount}" required min="1" step="1">
         </div>
+        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px; cursor: pointer;">
+          <input type="checkbox" id="edit-op-recalc" checked style="width: 20px; height: 20px; accent-color: var(--accent);">
+          <span>Пересчитать оставшиеся взносы</span>
+        </label>
         <div class="modal-actions">
           <button class="btn btn-outline" id="btn-edit-cancel">Отмена</button>
           <button class="btn" id="btn-edit-save">Сохранить</button>
@@ -834,6 +838,8 @@ export async function renderPlanScreen(container, db) {
       
       document.getElementById('btn-edit-save').addEventListener('click', async () => {
         const newAmountRub = parseFloat(document.getElementById('edit-op-amount').value);
+        const recalculateRest = document.getElementById('edit-op-recalc').checked;
+        
         if (isNaN(newAmountRub) || newAmountRub <= 0) {
           alert('Введите корректную сумму больше нуля.');
           return;
@@ -843,7 +849,7 @@ export async function renderPlanScreen(container, db) {
           const cmd = {
             commandId: generateId(),
             commandType: 'plannedOperation.update',
-            payload: { operationId: opId, plannedAmountMinor: Math.round(newAmountRub * 100) },
+            payload: { operationId: opId, plannedAmountMinor: Math.round(newAmountRub * 100), recalculateRest },
             registeredAt: new Date().toISOString()
           };
           await executeCommand(db, cmd);
