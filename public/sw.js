@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v98';
+const CACHE_VERSION = 'v99';
 const CACHE_NAME = `finance-planner-${CACHE_VERSION}`;
 
 const APP_SHELL = [
