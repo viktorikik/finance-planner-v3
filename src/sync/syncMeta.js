@@ -1,6 +1,6 @@
 /* ==========================================================================
    syncMeta.js — служебные метаданные синхронизации в сторе syncMeta.
-   Хранит: lastSync, forceCloudReset, knownShares.
+   Хранит: lastSync, forceCloudReset, knownShares, hasDoneFullUpload.
    ========================================================================== */
 import { getFromStore, putIntoStore } from '../infrastructure/database/transaction.js';
 
@@ -52,7 +52,7 @@ export async function clearOutbox(db) {
   await awaitTx(tx);
 }
 
-// === НОВОЕ: Управление списком известных шарингов для Backfill ===
+// === Управление списком известных шарингов ===
 export async function getKnownShares(db) {
   const tx = db.transaction(['syncMeta'], 'readonly');
   const row = await getFromStore('syncMeta', 'knownShares', tx);
@@ -63,5 +63,19 @@ export async function getKnownShares(db) {
 export async function setKnownShares(db, sharesArray) {
   const tx = db.transaction(['syncMeta'], 'readwrite');
   await putIntoStore('syncMeta', { id: 'knownShares', value: sharesArray }, tx);
+  await awaitTx(tx);
+}
+
+// === Маркер первичной полной выгрузки в облако ===
+export async function getHasDoneFullUpload(db) {
+  const tx = db.transaction(['syncMeta'], 'readonly');
+  const row = await getFromStore('syncMeta', 'hasDoneFullUpload', tx);
+  await awaitTx(tx);
+  return Boolean(row?.value);
+}
+
+export async function setHasDoneFullUpload(db, value) {
+  const tx = db.transaction(['syncMeta'], 'readwrite');
+  await putIntoStore('syncMeta', { id: 'hasDoneFullUpload', value }, tx);
   await awaitTx(tx);
 }
