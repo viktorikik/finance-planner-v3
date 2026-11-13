@@ -1,44 +1,85 @@
 /* ==========================================================================
    Экран «Статистика».
-   - Обновленный дизайн: Donut с центральной суммой, Bar Chart с сеткой,
-     Empty States для пустых графиков, иконки в «Где лежат деньги».
+   - Donut с центральной суммой, Bar Chart с сеткой.
+   - Empty States для пустых графиков.
+   - v4.4.3: фильтрация по activeViewOwnerId (свои данные vs данные друга).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { calculateSavingsRate } from '../../../domain/statistics/savingsRate.js';
+import { getSupabaseClient } from '../../../supabaseClient.js';
+import { getActiveViewOwnerId, setActiveViewOwnerId } from '../../state.js';
 
 const CATEGORY_COLORS = ['#D5E84A', '#789879', '#D4776D', '#D8A65A', '#8b91a3', '#A58BD4', '#6DB4D4'];
 
 export async function renderStatisticsScreen(container, db) {
-  const tx = db.transaction(['goals', 'moneyEntries', 'actualContributions', 'actualIncomes', 'actualTransactions', 'categories'], 'readonly');
-  const goals = await getAllFromStore('goals', tx);
-  const moneyEntries = await getAllFromStore('moneyEntries', tx);
-  const actualContributions = await getAllFromStore('actualContributions', tx);
-  const actualIncomes = await getAllFromStore('actualIncomes', tx);
-  const actualTransactions = await getAllFromStore('actualTransactions', tx);
-  const categories = await getAllFromStore('categories', tx);
+  const supabase = getSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const myId = user?.id;
+
+  const tx = db.transaction(
+    ['goals', 'moneyEntries', 'actualContributions', 'actualIncomes', 'actualTransactions', 'categories'],
+    'readonly'
+  );
+  const allGoalsRaw = await getAllFromStore('goals', tx);
+  const allMoneyEntriesRaw = await getAllFromStore('moneyEntries', tx);
+  const allActualContributionsRaw = await getAllFromStore('actualContributions', tx);
+  const allActualIncomesRaw = await getAllFromStore('actualIncomes', tx);
+  const allActualTransactionsRaw = await getAllFromStore('actualTransactions', tx);
+  const allCategoriesRaw = await getAllFromStore('categories', tx);
+
+  // === Определяем, чьи данные показываем ===
+  // ownerIds строим по всем источникам, где есть _ownerId (на случай, если
+  // у друга нет целей, но есть транзакции).
+  const ownerIdSet = new Set();
+  const collect = (arr) => arr.forEach(x => { if (x._ownerId) ownerIdSet.add(x._ownerId); });
+  collect(allGoalsRaw);
+  collect(allMoneyEntriesRaw);
+  collect(allActualTransactionsRaw);
+  collect(allActualIncomesRaw);
+  collect(allActualContributionsRaw);
+
+  let targetOwnerId = getActiveViewOwnerId();
+  if (!targetOwnerId || (targetOwnerId !== myId && !ownerIdSet.has(targetOwnerId))) {
+    targetOwnerId = myId;
+    setActiveViewOwnerId(null);
+  }
+  const isReadOnly = targetOwnerId !== myId;
+
+  const goals = allGoalsRaw.filter(g => (g._ownerId || myId) === targetOwnerId);
+  const moneyEntries = allMoneyEntriesRaw.filter(e => (e._ownerId || myId) === targetOwnerId);
+  const actualContributions = allActualContributionsRaw.filter(c => (c._ownerId || myId) === targetOwnerId);
+  const actualIncomes = allActualIncomesRaw.filter(i => (i._ownerId || myId) === targetOwnerId);
+  const actualTransactions = allActualTransactionsRaw.filter(t => (t._ownerId || myId) === targetOwnerId);
+  const categories = allCategoriesRaw.filter(c => (c._ownerId || myId) === targetOwnerId);
+  // ==========================================
 
   const activeGoals = goals.filter(g => g.status === 'active');
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
   const totalInGoals = totalAccumulated - poolBalance;
-  
+
   const savingsRate = calculateSavingsRate(actualIncomes, actualContributions);
 
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
-  
+
   const totalIncomesRub = actualIncomes.reduce((s, i) => s + i.amountMinor, 0);
-  const totalContribsRub = actualContributions.filter(c => c.reversalStatus === 'active' && c.type !== 'initial').reduce((s, c) => s + c.amountMinor, 0);
+  const totalContribsRub = actualContributions
+    .filter(c => c.reversalStatus === 'active' && c.type !== 'initial')
+    .reduce((s, c) => s + c.amountMinor, 0);
 
   let savingsHint = '';
   if (savingsRate > 100) {
     savingsHint = '<div style="font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.4;">Вы откладываете больше, чем заработали в этом месяце. Возможно, вы используете накопления из прошлого.</div>';
   }
 
-  // === 1. Подготовка данных для Пончика (Расходы по категориям) ===
-  const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-  const thisMonthExpenses = actualTransactions.filter(t => t.type === 'expense' && t.actualDate.startsWith(currentMonth));
-  
+  // === 1. Пончик (Расходы по категориям) ===
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const thisMonthExpenses = actualTransactions.filter(
+    t => t.type === 'expense' && t.actualDate.startsWith(currentMonth)
+  );
+
   const expensesByCategory = {};
   thisMonthExpenses.forEach(t => {
     const catId = t.category || 'other';
@@ -50,10 +91,10 @@ export async function renderStatisticsScreen(container, db) {
   const catData = Object.keys(expensesByCategory).map(catId => {
     const cat = categories.find(c => c.id === catId);
     const fallbackColor = CATEGORY_COLORS[colorIndex++ % CATEGORY_COLORS.length];
-    return { 
-      name: cat ? cat.name : 'Прочее', 
-      color: cat?.color || fallbackColor, 
-      amount: expensesByCategory[catId] 
+    return {
+      name: cat ? cat.name : 'Прочее',
+      color: cat?.color || fallbackColor,
+      amount: expensesByCategory[catId]
     };
   }).sort((a, b) => b.amount - a.amount);
 
@@ -64,13 +105,13 @@ export async function renderStatisticsScreen(container, db) {
     const R = 60;
     const C = 2 * Math.PI * R;
     let offset = 0;
-    
+
     const circles = catData.map(item => {
       const percent = item.amount / totalExpenseThisMonth;
       const dash = percent * C;
       const circle = `
-        <circle r="${R}" cx="80" cy="80" fill="transparent" stroke="${item.color}" stroke-width="24" 
-                stroke-dasharray="${dash} ${C}" stroke-dashoffset="${-offset}" 
+        <circle r="${R}" cx="80" cy="80" fill="transparent" stroke="${item.color}" stroke-width="24"
+                stroke-dasharray="${dash} ${C}" stroke-dashoffset="${-offset}"
                 style="transition: stroke-dasharray 0.5s ease;" />
       `;
       offset += dash;
@@ -82,9 +123,8 @@ export async function renderStatisticsScreen(container, db) {
         <div style="position: relative; width: 160px; height: 160px; flex-shrink: 0;">
           <svg width="160" height="160" viewBox="0 0 160 160" style="transform: rotate(-90deg); position: absolute; inset: 0;">
             ${circles}
-            <circle r="48" cx="80" cy="80" fill="var(--card)" /> <!-- Вырезаем дырку -->
+            <circle r="48" cx="80" cy="80" fill="var(--card)" />
           </svg>
-          <!-- Текст в центре -->
           <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none;">
             <span style="font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Расходы</span>
             <span style="font-size: 16px; font-weight: 800; color: var(--text);">${formatRub(totalExpenseThisMonth)} ₽</span>
@@ -105,7 +145,6 @@ export async function renderStatisticsScreen(container, db) {
       </div>
     `;
   } else {
-    // Красивая заглушка, если нет расходов
     donutChartHtml = `
       <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 160px; margin-top: 12px; color: var(--muted);">
         <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.4;">
@@ -116,55 +155,44 @@ export async function renderStatisticsScreen(container, db) {
     `;
   }
 
-  // === 2. Подготовка данных для Столбцов (Доходы/Расходы за 6 месяцев) ===
+  // === 2. Столбцы (Доходы/Расходы за 6 месяцев) ===
   const last6Months = [];
   for (let i = 5; i >= 0; i--) {
     const d = new Date();
     d.setMonth(d.getMonth() - i);
-    const ym = d.toISOString().slice(0, 7);
+    const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     const monthName = d.toLocaleDateString('ru-RU', { month: 'short' });
-    
+
     const income = actualTransactions.filter(t => t.type === 'income' && t.actualDate.startsWith(ym)).reduce((s, t) => s + t.amountMinor, 0);
     const expense = actualTransactions.filter(t => t.type === 'expense' && t.actualDate.startsWith(ym)).reduce((s, t) => s + t.amountMinor, 0);
-    
+
     last6Months.push({ monthName, income, expense });
   }
 
   const maxRealVal = Math.max(...last6Months.map(m => Math.max(m.income, m.expense)), 0);
-  // Округляем максимальное значение для шкалы Y, чтобы было красиво (минимум 1000 руб)
   const maxVal = maxRealVal > 0 ? Math.ceil(maxRealVal / 100000) * 100000 : 100000;
   const chartHeight = 120;
-  
-  // Есть ли хоть какие-то данные за 6 месяцев?
   const hasBarData = maxRealVal > 0;
 
   const barChartHtml = hasBarData ? `
     <div style="position: relative; margin-top: 32px; padding-bottom: 24px;">
-      <!-- Ось Y (максимальное значение) -->
       <div style="position: absolute; top: -20px; left: 0; font-size: 11px; color: var(--muted); font-weight: 600;">
         ${formatRub(maxVal)} ₽
       </div>
-
-      <!-- Сетка -->
       <div style="position: absolute; inset: 0; bottom: 24px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none;">
         ${[0, 1, 2, 3].map(() => `<div style="border-bottom: 1px dashed var(--border); width: 100%;"></div>`).join('')}
         <div style="border-bottom: 1px solid var(--border); width: 100%;"></div>
       </div>
-
-      <!-- Столбцы -->
       <div style="display: flex; justify-content: space-between; align-items: flex-end; height: ${chartHeight}px; position: relative; z-index: 1;">
         ${last6Months.map(m => {
           const inH = (m.income / maxVal) * chartHeight;
           const exH = (m.expense / maxVal) * chartHeight;
-          
           return `
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; height: 100%; position: relative;">
               <div style="display: flex; gap: 4px; align-items: flex-end; height: 100%;">
-                <!-- Доходы -->
                 <div style="width: 14px; height: ${Math.max(2, inH)}px; background: var(--green); border-radius: 4px 4px 0 0; position: relative;" title="Доход: ${formatRub(m.income)} ₽">
                   ${inH > 20 ? `<div style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--green); font-weight: 700;">${formatRub(m.income)}</div>` : ''}
                 </div>
-                <!-- Расходы -->
                 <div style="width: 14px; height: ${Math.max(2, exH)}px; background: var(--red); border-radius: 4px 4px 0 0; position: relative;" title="Расход: ${formatRub(m.expense)} ₽">
                   ${exH > 20 ? `<div style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--red); font-weight: 700;">${formatRub(m.expense)}</div>` : ''}
                 </div>
@@ -188,7 +216,23 @@ export async function renderStatisticsScreen(container, db) {
     </div>
   `;
 
+  // === Баннер «Только чтение» для чужих данных ===
+  const readOnlyBannerHtml = isReadOnly ? `
+    <section class="card" style="margin-bottom: 16px; padding: 12px 14px; border-color: var(--yellow); background: rgba(216,166,90,0.08);">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+        <div style="font-size: 13px; font-weight: 600; color: var(--yellow); line-height: 1.4;">
+          Вы смотрите статистику друга. Только чтение.
+        </div>
+      </div>
+    </section>
+  ` : '';
+
   let html = `
+    ${readOnlyBannerHtml}
+
     <section class="card" style="text-align: center; background: linear-gradient(180deg, var(--card) 0%, rgba(61, 220, 151, 0.05) 100%); margin-bottom: 16px;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;">Всего накоплено</div>
       <div style="font-size: 40px; font-weight: 800; color: var(--green); line-height: 1.1;">${formatRub(totalAccumulated)} ₽</div>
@@ -237,7 +281,7 @@ export async function renderStatisticsScreen(container, db) {
           <div class="fill" style="width: ${Math.min(100, savingsRate)}%; background: var(--accent);"></div>
         </div>
         <p style="font-size: 14px; margin-top: 16px; line-height: 1.5; color: var(--text);">
-           Это значит, что из каждых заработанных <b>1000 ₽</b> вы оставляете на цели <b>${(savingsRate * 10).toFixed(0)} ₽</b>.
+          Это значит, что из каждых заработанных <b>1000 ₽</b> вы оставляете на цели <b>${(savingsRate * 10).toFixed(0)} ₽</b>.
         </p>
         ${savingsHint}
       ` : `
@@ -252,7 +296,7 @@ export async function renderStatisticsScreen(container, db) {
         ${activeGoals.map(goal => {
           const balance = calculateGoalBalance(goal.id, moneyEntries);
           const percent = goal.targetAmountMinor > 0 ? Math.min(100, (balance / goal.targetAmountMinor) * 100) : 0;
-          
+
           return `
             <div>
               <div style="display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 14px;">
