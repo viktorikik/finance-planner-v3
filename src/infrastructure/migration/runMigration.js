@@ -1,13 +1,13 @@
 /* ==========================================================================
    Автоматический запуск миграции при старте приложения.
    Порядок: v7→v8 (localStorage → IndexedDB) → v12→v13 (seed) → v13→v14 (sync-поля).
+   Шаг v13→v14 устойчив к ошибкам: при падении bootstrap НЕ роняется.
    ========================================================================== */
 import { getFromStore, putIntoStore } from '../database/transaction.js';
 import { migrateV7toV8 } from './migrateV7.js';
 import { planCategoriesSeed, planSettingsSeed } from './migrateV12toV13.js';
 import { migrateV13toV14 } from './migrateV13toV14.js';
 
-/** Дождаться завершения транзакции (commit или abort). */
 function awaitTx(tx) {
   return new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
@@ -17,7 +17,7 @@ function awaitTx(tx) {
 }
 
 export async function runMigrationIfNeeded(db) {
-  // === ШАГ 1 + 2: v7→v8 и v12→v13 (одна общая транзакция) ===
+  // === ШАГ 1 + 2: v7→v8 и v12→v13 ===
   {
     const stores = [
       'meta', 'goals',
@@ -26,7 +26,6 @@ export async function runMigrationIfNeeded(db) {
     ];
     const tx = db.transaction(stores, 'readwrite');
 
-    // --- ШАГ 1: Миграция из старого localStorage (v7 -> v8) ---
     const migrationFlag = await getFromStore('meta', 'migration_v8_done', tx);
     if (!migrationFlag) {
       let oldData = null;
@@ -75,7 +74,6 @@ export async function runMigrationIfNeeded(db) {
       }
     }
 
-    // --- ШАГ 2: Сидинг категорий и настроек (v12 -> v13) ---
     const seedV13Flag = await getFromStore('meta', 'seed_v13_done', tx);
     if (!seedV13Flag) {
       console.log('[Migration] Инициализация категорий и настроек...');
@@ -97,8 +95,8 @@ export async function runMigrationIfNeeded(db) {
     await awaitTx(tx);
   }
 
-  // === ШАГ 3: v13 → v14 (sync-поля в синхронизируемых сторах) ===
-  {
+  // === ШАГ 3: v13 → v14 (устойчиво к падению) ===
+  try {
     const flagTx = db.transaction(['meta'], 'readonly');
     const v14Flag = await getFromStore('meta', 'migration_v14_done', flagTx);
     await awaitTx(flagTx);
@@ -117,5 +115,9 @@ export async function runMigrationIfNeeded(db) {
 
       console.log('[Migration] Поля синхронизации добавлены.');
     }
+  } catch (err) {
+    // НЕ роняем bootstrap: приложение запустится, пусть и без sync-полей.
+    // При следующем запуске миграция попробует снова.
+    console.error('[Migration] Ошибка миграции v13→v14 (продолжаем без неё):', err);
   }
 }
