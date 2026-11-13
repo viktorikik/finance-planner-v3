@@ -136,11 +136,14 @@ export async function executeCommand(db, command) {
         };
         plan = { newGoals: [newGoal] };
         break;
+      
       case 'goal.updateSettings':
         const goalToUpdate = await getFromStore('goals', payload.goalId, tx);
         if (!goalToUpdate) throw new Error('Цель не найдена');
+        
         const updatedGoalSettings = {
           ...goalToUpdate,
+          targetAmountMinor: payload.targetAmountMinor !== undefined ? Math.round(payload.targetAmountMinor) : goalToUpdate.targetAmountMinor,
           startMonth: payload.startMonth !== undefined ? payload.startMonth : goalToUpdate.startMonth,
           deadlineMonth: payload.deadlineMonth !== undefined ? payload.deadlineMonth : goalToUpdate.deadlineMonth,
           annualRate: payload.annualRate !== undefined ? payload.annualRate : goalToUpdate.annualRate,
@@ -153,9 +156,11 @@ export async function executeCommand(db, command) {
         };
         plan.newGoals.push(updatedGoalSettings);
         break;
+
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
         break;
+      
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
         if (!goalForGen) throw new Error('Цель не найдена');
@@ -169,12 +174,14 @@ export async function executeCommand(db, command) {
         });
         plan = generatePlanForGoal(goalForGen, currentBalance, payload.currentMonth, generalInflationSetting);
         break;
+      
       case 'plannedOperation.delete':
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('plannedOperations').delete(payload.operationId);
           req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
+      
       case 'plannedOperation.clearForGoal':
         const allOpsForGoal = await getAllFromStore('plannedOperations', tx);
         const opsToDelete = allOpsForGoal.filter(op => op.goalId === payload.goalId);
@@ -185,12 +192,14 @@ export async function executeCommand(db, command) {
           });
         }
         break;
+      
       case 'goal.achieve':
         const goalToAchieve = await getFromStore('goals', payload.goalId, tx);
         if (!goalToAchieve) throw new Error('Цель не найдена');
         plan.newEntries = burnGoalMoney(payload.goalId, state.moneyEntries);
         plan.newGoals.push({ ...goalToAchieve, status: 'achieved', achievedAt: new Date().toISOString().slice(0, 10) });
         break;
+      
       case 'goal.delete':
         const goalToDelete = await getFromStore('goals', payload.goalId, tx);
         if (!goalToDelete) throw new Error('Цель не найдена');
@@ -212,14 +221,17 @@ export async function executeCommand(db, command) {
           req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
+      
       case 'plannedTransaction.create':
         plan = planPlannedTransactionCreate(payload);
         break;
+      
       case 'plannedTransaction.update':
         const existingTx = await getFromStore('plannedTransactions', payload.id, tx);
         if (!existingTx) throw new Error('Транзакция не найдена');
         plan = planPlannedTransactionUpdate(payload, existingTx);
         break;
+      
       case 'plannedTransaction.delete':
         const allFactsToUnlink = await getAllFromStore('actualTransactions', tx);
         const linkedFacts = allFactsToUnlink.filter(f => f.plannedTransactionId === payload.id);
@@ -231,9 +243,11 @@ export async function executeCommand(db, command) {
           req.onsuccess = resolve; req.onerror = () => reject(req.error);
         });
         break;
+      
       case 'actualTransaction.create':
         plan = planActualTransactionCreate(payload);
         break;
+      
       case 'actualTransaction.delete':
         await new Promise((resolve, reject) => {
           const req = tx.objectStore('actualTransactions').delete(payload.id);
