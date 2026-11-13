@@ -7,7 +7,7 @@ import { runMigrationIfNeeded } from '../infrastructure/migration/runMigration.j
 import { initRouter, navigate, setAuthenticated } from './router.js';
 import { registerServiceWorker } from '../pwa/registerServiceWorker.js';
 import { getCurrentSession, onAuthStateChange } from '../auth/authService.js';
-import { startAutoSync } from '../sync/syncManager.js'; // <--- НОВОЕ
+import { startAutoSync } from '../sync/syncManager.js';
 
 export async function bootstrap() {
   console.log('[bootstrap] app started');
@@ -20,7 +20,7 @@ export async function bootstrap() {
     // 2. Миграция
     await runMigrationIfNeeded(db);
 
-    // 3. Проверяем текущую сессию Supabase (читается из localStorage — работает офлайн)
+    // 3. Проверяем текущую сессию Supabase
     let authed = false;
     try {
       const session = await getCurrentSession();
@@ -42,7 +42,7 @@ export async function bootstrap() {
       
       if (event === 'SIGNED_IN' && nowAuthed) {
         navigate('plan');
-        startAutoSync(db); // <--- НОВОЕ: запускаем синк при входе
+        try { startAutoSync(db); } catch (e) { console.warn('[bootstrap] sync start error:', e); }
       } else if (event === 'SIGNED_OUT') {
         navigate('login');
       }
@@ -51,9 +51,13 @@ export async function bootstrap() {
     // 6. Service Worker
     await registerServiceWorker();
 
-    // 7. Запускаем фоновую синхронизацию при старте, если уже авторизованы
+    // 7. Запускаем фоновую синхронизацию при старте (безопасно)
     if (authed) {
-      startAutoSync(db);
+      try {
+        startAutoSync(db);
+      } catch (e) {
+        console.warn('[bootstrap] Не удалось запустить авто-синхронизацию:', e);
+      }
     }
 
     console.log('[bootstrap] ready');
