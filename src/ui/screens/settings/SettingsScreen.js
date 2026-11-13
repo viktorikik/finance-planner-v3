@@ -1,9 +1,7 @@
 /* ==========================================================================
    Экран «Настройки».
-   - Современный дизайн (аккордеоны, минимум эмодзи, чистые формы).
-   - Добавлен экспорт в CSV, HTML и PDF (через Print).
-   - Добавлено редактирование профиля (display_name).
-   - Добавлено переключение темы (Светлая / Тёмная / Системная).
+   - Исправлено сохранение профиля (проверка на ошибки RPC).
+   - Добавлено переключение темы.
    ========================================================================== */
 import { generateBackup, restoreBackup } from '../../../infrastructure/backup/exportBackup.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -38,7 +36,8 @@ export async function renderSettingsScreen(container, db) {
       // Загружаем профиль пользователя
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
-        const { data: profile } = await supabase.from('profiles').select('display_name').eq('id', user.id).single();
+        const { data: profile, error } = await supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle();
+        if (error) console.warn('[Settings] Ошибка загрузки профиля:', error);
         userProfile = profile;
       }
     } catch (err) {
@@ -51,7 +50,6 @@ export async function renderSettingsScreen(container, db) {
     const displayNameValue = userProfile?.display_name || '';
     const userEmail = (await supabase.auth.getUser()).data.user?.email || '';
     
-    // Получаем текущую тему (сохранена в localStorage)
     const currentTheme = localStorage.getItem('appTheme') || 'system';
 
     const expenseCats = categories.filter(c => c.type === 'expense').sort((a, b) => a.sortOrder - b.sortOrder);
@@ -65,6 +63,9 @@ export async function renderSettingsScreen(container, db) {
           
           <div style="background: var(--card-2); padding: 16px; border-radius: var(--radius-md); margin-bottom: 20px;">
             <h4 style="margin-top:0; margin-bottom: 12px; font-size: 15px; color: var(--text);">Ваш профиль</h4>
+            
+            <div id="profile-save-error" class="auth-error" style="display: none; margin-bottom: 12px;"></div>
+
             <div class="form-group" style="margin-bottom: 12px;">
               <label>Как вас зовут?</label>
               <p style="font-size:12px; color:var(--muted); margin-bottom:8px;">Это имя увидят те, с кем вы поделитесь доступом.</p>
@@ -211,19 +212,30 @@ export async function renderSettingsScreen(container, db) {
     document.getElementById('btn-save-profile').addEventListener('click', async (e) => {
       const name = document.getElementById('profile-name-input').value.trim();
       const btn = e.target;
+      const errorBox = document.getElementById('profile-save-error');
+      
+      btn.disabled = true; 
+      btn.textContent = 'Сохранение...';
+      errorBox.style.display = 'none';
+
       try {
-        btn.disabled = true; btn.textContent = 'Сохранение...';
         const { error } = await supabase.rpc('update_my_profile', { p_display_name: name });
-        if (error) throw error;
+        
+        if (error) {
+          throw error;
+        }
+        
         btn.textContent = 'Сохранено';
         setTimeout(() => { btn.textContent = 'Сохранить профиль'; btn.disabled = false; }, 1500);
       } catch (err) {
-        alert('Ошибка: ' + err.message);
-        btn.textContent = 'Сохранить профиль'; btn.disabled = false;
+        console.error('[Settings] Ошибка сохранения профиля:', err);
+        errorBox.textContent = 'Ошибка сохранения: ' + err.message;
+        errorBox.style.display = 'block';
+        btn.textContent = 'Сохранить профиль'; 
+        btn.disabled = false;
       }
     });
 
-    // Обработчик смены темы
     document.getElementById('theme-select').addEventListener('change', (e) => {
       const theme = e.target.value;
       localStorage.setItem('appTheme', theme);
@@ -233,7 +245,6 @@ export async function renderSettingsScreen(container, db) {
       
       if (theme === 'light') root.classList.add('theme-light');
       else if (theme === 'dark') root.classList.add('theme-dark');
-      // Если 'system' - классы не добавляем, сработает медиа-запрос
     });
 
     document.getElementById('btn-save-inflation').addEventListener('click', async (e) => {
