@@ -7,6 +7,7 @@ import { runMigrationIfNeeded } from '../infrastructure/migration/runMigration.j
 import { initRouter, navigate, setAuthenticated } from './router.js';
 import { registerServiceWorker } from '../pwa/registerServiceWorker.js';
 import { getCurrentSession, onAuthStateChange } from '../auth/authService.js';
+import { startAutoSync } from '../sync/syncManager.js'; // <--- НОВОЕ
 
 export async function bootstrap() {
   console.log('[bootstrap] app started');
@@ -38,12 +39,22 @@ export async function bootstrap() {
       const nowAuthed = Boolean(session);
       setAuthenticated(nowAuthed);
       updateBodyAuthClass(nowAuthed);
-      if (event === 'SIGNED_IN' && nowAuthed) navigate('plan');
-      else if (event === 'SIGNED_OUT') navigate('login');
+      
+      if (event === 'SIGNED_IN' && nowAuthed) {
+        navigate('plan');
+        startAutoSync(db); // <--- НОВОЕ: запускаем синк при входе
+      } else if (event === 'SIGNED_OUT') {
+        navigate('login');
+      }
     });
 
     // 6. Service Worker
     await registerServiceWorker();
+
+    // 7. Запускаем фоновую синхронизацию при старте, если уже авторизованы
+    if (authed) {
+      startAutoSync(db);
+    }
 
     console.log('[bootstrap] ready');
   } catch (err) {
