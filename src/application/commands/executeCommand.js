@@ -74,7 +74,6 @@ export async function executeCommand(db, command) {
     stores = [...new Set([...stores, ...Object.keys(STORES)])];
   }
 
-  // Защита от дублирования таблиц в транзакции
   stores = [...new Set(stores)];
 
   const tx = db.transaction(stores, 'readwrite');
@@ -159,6 +158,17 @@ export async function executeCommand(db, command) {
 
       case 'plannedOperation.create':
         plan = planPlannedOperationCreate(payload);
+        break;
+
+      case 'plannedOperation.update':
+        const opToUpdate = await getFromStore('plannedOperations', payload.operationId, tx);
+        if (!opToUpdate) throw new Error('Операция не найдена');
+        const updatedOp = {
+          ...opToUpdate,
+          plannedAmountMinor: Math.round(payload.plannedAmountMinor),
+          updatedAt: new Date().toISOString()
+        };
+        plan.newPlannedOperations.push(updatedOp);
         break;
       
       case 'plannedOperation.generate':
