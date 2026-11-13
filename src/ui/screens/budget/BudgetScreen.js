@@ -2,10 +2,10 @@
    Экран «Бюджет». Управление доходами, расходами и фактом + Годовой прогноз
    + Аналитика по категориям. Формы вынесены в модальные окна.
    + Поддержка режима «Только чтение» (совместный доступ).
+   + Добавлены стрелочки для переключения месяцев.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
-import { calculateMonthlyBudget } from '../../../domain/budget/monthlyBudget.js';
 import { calculateYearlyBudget } from '../../../domain/budget/yearlyBudget.js';
 import { calculateBudgetExecution } from '../../../domain/budget/budgetExecution.js';
 import { calculateCategoryAnalytics } from '../../../domain/budget/categoryAnalytics.js';
@@ -215,10 +215,19 @@ export async function renderBudgetScreen(container, db) {
       ${isReadOnly ? '<div style="background:var(--yellow); color:#000; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; font-weight:600; text-align:center;">🔒 Режим чтения</div>' : ''}
 
       <div class="card">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-          <h2>Месяц</h2>
-          <button class="btn btn-outline" id="btn-pick-month" style="width:auto; padding:8px 16px; font-size:14px; text-transform: capitalize;">
+        <!-- БЛОК ВЫБОРА МЕСЯЦА СО СТРЕЛОЧКАМИ -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; gap: 8px;">
+          <button class="btn btn-icon" id="btn-prev-month" style="padding: 8px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--border); width: 40px; height: 40px; display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          
+          <button class="btn btn-outline" id="btn-pick-month" style="flex: 1; padding:10px; font-size:14px; text-transform: capitalize; font-weight: 600; border: none; background: transparent; display:flex; flex-direction:column; align-items:center; justify-content:center;">
             ${formatMonthTitle(currentMonth)}
+            <span style="font-size:10px; color:var(--muted); font-weight:normal;">нажмите для выбора</span>
+          </button>
+
+          <button class="btn btn-icon" id="btn-next-month" style="padding: 8px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--border); width: 40px; height: 40px; display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
           </button>
         </div>
 
@@ -276,7 +285,20 @@ export async function renderBudgetScreen(container, db) {
 
     initSwipe(container, isReadOnly);
 
-    // Логика выбора месяца
+    // Логика смены месяца стрелочками
+    const changeMonth = (offset) => {
+      let [y, m] = currentMonth.split('-').map(Number);
+      m += offset;
+      if (m > 12) { m = 1; y += 1; }
+      if (m < 1) { m = 12; y -= 1; }
+      currentMonth = `${y}-${String(m).padStart(2, '0')}`;
+      render();
+    };
+
+    document.getElementById('btn-prev-month').addEventListener('click', () => changeMonth(-1));
+    document.getElementById('btn-next-month').addEventListener('click', () => changeMonth(1));
+
+    // Логика выбора месяца через модалку
     document.getElementById('btn-pick-month').addEventListener('click', () => {
       const modal = document.getElementById('month-modal');
       const yearSelect = document.getElementById('month-select-year');
@@ -373,7 +395,7 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function initSwipe(container, isReadOnly) {
-    if (isReadOnly) return; // Не включаем свайпы, если только чтение
+    if (isReadOnly) return;
 
     container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
       const item = wrapper.querySelector('.swipe-item');
@@ -554,7 +576,6 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function showPlannedForm(type, existingTx = null) {
-    // ... (остается без изменений, так как вызывается только если не ReadOnly)
     const modal = document.getElementById('form-modal');
     const content = document.getElementById('form-modal-content');
     const isIncome = type === 'income';
@@ -665,7 +686,6 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function showFactForm(type, plannedTx = null) {
-    // ... (остается без изменений, так как вызывается только если не ReadOnly)
     const modal = document.getElementById('form-modal');
     const content = document.getElementById('form-modal-content');
     const isIncome = type === 'income';
