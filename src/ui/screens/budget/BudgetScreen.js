@@ -245,7 +245,7 @@ export async function renderBudgetScreen(container, db) {
         ` : ''}
 
         <button class="btn btn-text" id="btn-toggle-yearly" style="width: 100%; margin-top: 8px; border: 1px dashed var(--border); padding: 10px;">
-          ${isYearlyViewVisible ? 'Скрыть прогноз на год' : '📅 Показать прогноз на 12 месяцев'}
+          ${isYearlyViewVisible ? 'Скрыть прогноз на год' : 'Показать прогноз на 12 месяцев'}
         </button>
       </div>
 
