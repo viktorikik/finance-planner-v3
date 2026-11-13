@@ -241,3 +241,123 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
   .desktop-delete { display: flex !important; }
   .swipe-action { display: none; }
 }
+
+
+/* =============== AUTH SCREEN =============== */
+body.is-auth-screen .app-header,
+body.is-auth-screen .tabs,
+body.is-auth-screen .app-footer {
+  display: none;
+}
+
+body.is-auth-screen #screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.auth-screen {
+  width: 100%;
+  max-width: 420px;
+}
+
+.auth-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 24px;
+}
+
+.auth-card h2 {
+  margin-bottom: 8px;
+  font-size: 22px;
+}
+
+.auth-subtitle {
+  color: var(--muted);
+  margin-bottom: 24px;
+  font-size: 14px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.auth-field input {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text);
+  font-size: 16px; /* предотвращает авто-зум на iOS */
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.auth-field input:focus {
+  border-color: var(--accent);
+}
+
+.auth-error {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(255, 92, 124, 0.12);
+  color: var(--red);
+  font-size: 14px;
+}
+
+.auth-submit {
+  width: 100%;
+  padding: 14px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.auth-switch {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: inherit;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.auth-note {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+}
