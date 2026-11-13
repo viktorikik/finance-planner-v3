@@ -1,10 +1,13 @@
 /* ==========================================================================
    Экран «Статистика».
-   Добавлены SVG-графики: Кольцевая диаграмма расходов и Столбчатая по месяцам.
+   - Обновленный дизайн: Donut с центральной суммой, Bar Chart с сеткой,
+     Empty States для пустых графиков, иконки в «Где лежат деньги».
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { calculateSavingsRate } from '../../../domain/statistics/savingsRate.js';
+
+const CATEGORY_COLORS = ['#D5E84A', '#789879', '#D4776D', '#D8A65A', '#8b91a3', '#A58BD4', '#6DB4D4'];
 
 export async function renderStatisticsScreen(container, db) {
   const tx = db.transaction(['goals', 'moneyEntries', 'actualContributions', 'actualIncomes', 'actualTransactions', 'categories'], 'readonly');
@@ -43,14 +46,20 @@ export async function renderStatisticsScreen(container, db) {
     expensesByCategory[catId] += t.amountMinor;
   });
 
+  let colorIndex = 0;
   const catData = Object.keys(expensesByCategory).map(catId => {
-    const cat = categories.find(c => c.id === catId) || { name: 'Прочее', color: '#8b91a3' };
-    return { name: cat.name, color: cat.color, amount: expensesByCategory[catId] };
+    const cat = categories.find(c => c.id === catId);
+    const fallbackColor = CATEGORY_COLORS[colorIndex++ % CATEGORY_COLORS.length];
+    return { 
+      name: cat ? cat.name : 'Прочее', 
+      color: cat?.color || fallbackColor, 
+      amount: expensesByCategory[catId] 
+    };
   }).sort((a, b) => b.amount - a.amount);
 
   const totalExpenseThisMonth = catData.reduce((s, c) => s + c.amount, 0);
 
-  let donutChartHtml = '<p class="muted">В этом месяце пока нет фактических расходов.</p>';
+  let donutChartHtml = '';
   if (totalExpenseThisMonth > 0) {
     const R = 60;
     const C = 2 * Math.PI * R;
@@ -70,22 +79,39 @@ export async function renderStatisticsScreen(container, db) {
 
     donutChartHtml = `
       <div style="display: flex; align-items: center; gap: 16px; justify-content: center; margin-top: 12px;">
-        <svg width="160" height="160" viewBox="0 0 160 160" style="transform: rotate(-90deg);">
-          ${circles}
-          <circle r="48" cx="80" cy="80" fill="var(--card)" /> <!-- Вырезаем дырку -->
-        </svg>
+        <div style="position: relative; width: 160px; height: 160px; flex-shrink: 0;">
+          <svg width="160" height="160" viewBox="0 0 160 160" style="transform: rotate(-90deg); position: absolute; inset: 0;">
+            ${circles}
+            <circle r="48" cx="80" cy="80" fill="var(--card)" /> <!-- Вырезаем дырку -->
+          </svg>
+          <!-- Текст в центре -->
+          <div style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none;">
+            <span style="font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">Расходы</span>
+            <span style="font-size: 16px; font-weight: 800; color: var(--text);">${formatRub(totalExpenseThisMonth)} ₽</span>
+          </div>
+        </div>
         <div style="flex: 1; display: flex; flex-direction: column; gap: 8px;">
           ${catData.slice(0, 4).map(item => `
             <div style="display:flex; justify-content:space-between; font-size:12px; align-items:center;">
               <div style="display:flex; align-items:center; gap:6px;">
-                <span style="width:8px; height:8px; border-radius:50%; background:${item.color}; display:inline-block;"></span>
-                <span style="color:var(--text);">${item.name}</span>
+                <span style="width:8px; height:8px; border-radius:50%; background:${item.color}; display:inline-block; flex-shrink: 0;"></span>
+                <span style="color:var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px;">${item.name}</span>
               </div>
-              <span style="color:var(--muted);">${Math.round((item.amount/totalExpenseThisMonth)*100)}%</span>
+              <span style="color:var(--muted); font-weight: 600;">${Math.round((item.amount/totalExpenseThisMonth)*100)}%</span>
             </div>
           `).join('')}
-          ${catData.length > 4 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">+ еще ${catData.length - 4} кат.</div>` : ''}
+          ${catData.length > 4 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px; font-weight: 600;">+ еще ${catData.length - 4} кат.</div>` : ''}
         </div>
+      </div>
+    `;
+  } else {
+    // Красивая заглушка, если нет расходов
+    donutChartHtml = `
+      <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 160px; margin-top: 12px; color: var(--muted);">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.4;">
+          <circle cx="12" cy="12" r="10"/><path d="M8 12h8"/>
+        </svg>
+        <span style="font-size: 13px; font-weight: 500;">Пока нет расходов в этом месяце</span>
       </div>
     `;
   }
@@ -104,28 +130,61 @@ export async function renderStatisticsScreen(container, db) {
     last6Months.push({ monthName, income, expense });
   }
 
-  const maxVal = Math.max(...last6Months.map(m => Math.max(m.income, m.expense)), 1);
+  const maxRealVal = Math.max(...last6Months.map(m => Math.max(m.income, m.expense)), 0);
+  // Округляем максимальное значение для шкалы Y, чтобы было красиво (минимум 1000 руб)
+  const maxVal = maxRealVal > 0 ? Math.ceil(maxRealVal / 100000) * 100000 : 100000;
   const chartHeight = 120;
+  
+  // Есть ли хоть какие-то данные за 6 месяцев?
+  const hasBarData = maxRealVal > 0;
 
-  const barChartHtml = `
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; height: ${chartHeight + 30}px; margin-top: 16px; padding-bottom: 20px; position: relative; border-bottom: 1px solid var(--border);">
-      ${last6Months.map(m => {
-        const inH = (m.income / maxVal) * chartHeight;
-        const exH = (m.expense / maxVal) * chartHeight;
-        return `
-          <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; height: 100%; position: relative;">
-            <div style="display: flex; gap: 4px; align-items: flex-end; height: 100%;">
-              <div style="width: 12px; height: ${inH}px; background: var(--green); border-radius: 4px 4px 0 0; opacity: 0.9;"></div>
-              <div style="width: 12px; height: ${exH}px; background: var(--red); border-radius: 4px 4px 0 0; opacity: 0.9;"></div>
+  const barChartHtml = hasBarData ? `
+    <div style="position: relative; margin-top: 32px; padding-bottom: 24px;">
+      <!-- Ось Y (максимальное значение) -->
+      <div style="position: absolute; top: -20px; left: 0; font-size: 11px; color: var(--muted); font-weight: 600;">
+        ${formatRub(maxVal)} ₽
+      </div>
+
+      <!-- Сетка -->
+      <div style="position: absolute; inset: 0; bottom: 24px; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none;">
+        ${[0, 1, 2, 3].map(() => `<div style="border-bottom: 1px dashed var(--border); width: 100%;"></div>`).join('')}
+        <div style="border-bottom: 1px solid var(--border); width: 100%;"></div>
+      </div>
+
+      <!-- Столбцы -->
+      <div style="display: flex; justify-content: space-between; align-items: flex-end; height: ${chartHeight}px; position: relative; z-index: 1;">
+        ${last6Months.map(m => {
+          const inH = (m.income / maxVal) * chartHeight;
+          const exH = (m.expense / maxVal) * chartHeight;
+          
+          return `
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: 1; height: 100%; position: relative;">
+              <div style="display: flex; gap: 4px; align-items: flex-end; height: 100%;">
+                <!-- Доходы -->
+                <div style="width: 14px; height: ${Math.max(2, inH)}px; background: var(--green); border-radius: 4px 4px 0 0; position: relative;" title="Доход: ${formatRub(m.income)} ₽">
+                  ${inH > 20 ? `<div style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--green); font-weight: 700;">${formatRub(m.income)}</div>` : ''}
+                </div>
+                <!-- Расходы -->
+                <div style="width: 14px; height: ${Math.max(2, exH)}px; background: var(--red); border-radius: 4px 4px 0 0; position: relative;" title="Расход: ${formatRub(m.expense)} ₽">
+                  ${exH > 20 ? `<div style="position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 9px; color: var(--red); font-weight: 700;">${formatRub(m.expense)}</div>` : ''}
+                </div>
+              </div>
+              <div style="position: absolute; bottom: -20px; font-size: 11px; color: var(--muted); text-transform: capitalize; font-weight: 600;">${m.monthName}</div>
             </div>
-            <div style="position: absolute; bottom: -24px; font-size: 10px; color: var(--muted); text-transform: capitalize;">${m.monthName}</div>
-          </div>
-        `;
-      }).join('')}
+          `;
+        }).join('')}
+      </div>
     </div>
-    <div style="display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 12px;">
+    <div style="display: flex; gap: 16px; justify-content: center; margin-top: 8px; font-size: 12px; font-weight: 600;">
       <div style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; background: var(--green); border-radius: 50%;"></span> Доходы</div>
       <div style="display: flex; align-items: center; gap: 6px;"><span style="width: 10px; height: 10px; background: var(--red); border-radius: 50%;"></span> Расходы</div>
+    </div>
+  ` : `
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 160px; color: var(--muted);">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin-bottom: 12px; opacity: 0.4;">
+        <path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/>
+      </svg>
+      <span style="font-size: 13px; font-weight: 500;">Нет данных о доходах и расходах</span>
     </div>
   `;
 
@@ -148,13 +207,15 @@ export async function renderStatisticsScreen(container, db) {
     <section class="card">
       <h2>Где лежат деньги</h2>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-        <div style="background: var(--card-2); padding: 16px; border-radius: 12px; text-align: center;">
-          <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">В целях</div>
-          <div style="font-size: 20px; font-weight: 700;">${formatRub(totalInGoals)} ₽</div>
+        <div style="background: rgba(120, 152, 121, 0.08); padding: 16px; border-radius: var(--radius-md); text-align: center; border: 1px solid rgba(120, 152, 121, 0.2);">
+          <div style="font-size: 24px; margin-bottom: 4px;">🎯</div>
+          <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600;">В целях</div>
+          <div style="font-size: 20px; font-weight: 800; color: var(--text);">${formatRub(totalInGoals)} ₽</div>
         </div>
-        <div style="background: var(--card-2); padding: 16px; border-radius: 12px; text-align: center; border: 1px solid var(--border);">
-          <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px;">Свободные</div>
-          <div style="font-size: 20px; font-weight: 700; color: var(--accent);">${formatRub(poolBalance)} ₽</div>
+        <div style="background: rgba(213, 232, 74, 0.08); padding: 16px; border-radius: var(--radius-md); text-align: center; border: 1px solid rgba(213, 232, 74, 0.3);">
+          <div style="font-size: 24px; margin-bottom: 4px;">💰</div>
+          <div style="font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600;">Свободные</div>
+          <div style="font-size: 20px; font-weight: 800; color: var(--text);">${formatRub(poolBalance)} ₽</div>
         </div>
       </div>
     </section>
