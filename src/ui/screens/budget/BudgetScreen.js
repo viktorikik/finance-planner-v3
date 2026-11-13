@@ -169,4 +169,623 @@ export async function renderBudgetScreen(container, db) {
               </div>
               <div class="yearly-row-bottom">
                 <span class="yearly-income">Доход: +${formatCompactMoney(yearTotals.income)}</span>
-                <span class="yearly-expense">Расход: -${formatCompactMoney(yearTotals
+                <span class="yearly-expense">Расход: -${formatCompactMoney(yearTotals.expense + yearTotals.contribution)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    const factBalance = totalFactIncome - totalFactExpense;
+    const planBalance = plan.totalIncome - plan.totalExpense - (plan.totalContribution || 0);
+
+    const isFactNegative = factBalance < 0;
+    const isPlanNegative = planBalance < 0;
+
+    // === Баннер read-only с именем друга ===
+    const readOnlyLabel = friendName
+      ? `🔒 Режим чтения. Данные друга: ${escapeHtml(friendName)}.`
+      : '🔒 Режим чтения';
+
+    let summaryHtml = `
+      <div class="budget-summary" style="background:var(--card-2); padding:16px; border-radius:12px; margin-bottom:16px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom:8px; border-bottom:1px solid var(--border); padding-bottom:4px;">
+          <span>Категория</span>
+          <span>План / <b>Факт</b></span>
+        </div>
+        <div class="summary-row">
+          <span class="muted">Доходы:</span>
+          <span>+${formatMoney(plan.totalIncome)} / <b style="color:var(--green)">+${formatMoney(totalFactIncome)}</b></span>
+        </div>
+        <div class="summary-row">
+          <span class="muted">Расходы:</span>
+          <span>-${formatMoney(plan.totalExpense)} / <b style="color:var(--red)">-${formatMoney(totalFactExpense)}</b></span>
+        </div>
+        <div class="summary-row">
+          <span class="muted">Взносы в цели:</span>
+          <span>-${formatMoney(plan.totalContribution || 0)}</span>
+        </div>
+        <div class="summary-row" style="border-top:1px solid var(--border); margin-top:8px; padding-top:8px; font-weight:bold;">
+          <span>Остаток:</span>
+          <span>
+            <span style="color: ${isPlanNegative ? 'var(--red)' : 'var(--green)'}">${formatMoney(planBalance)}</span>
+            /
+            <span style="color: ${isFactNegative ? 'var(--red)' : 'var(--green)'}">${formatMoney(factBalance)}</span> ₽
+          </span>
+        </div>
+      </div>
+    `;
+
+    let analyticsHtml = '';
+    if (analytics.categories.length > 0) {
+      const sourceLabel = analytics.source === 'fact' ? 'по фактическим тратам' : 'по плану (фактов пока нет)';
+      analyticsHtml = `
+        <div class="card" style="margin-top: 16px;">
+          <h2 style="margin-bottom: 4px;">Куда уходят деньги</h2>
+          <p style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">${sourceLabel}</p>
+
+          ${analytics.categories.map(cat => `
+            <div style="margin-bottom: 14px;">
+              <div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px;">
+                <span style="font-weight:600; color:${cat.color};">${cat.emoji || ''} ${cat.name}</span>
+                <span style="color:var(--muted);">${formatMoney(cat.amountMinor)} ₽ · ${cat.percent.toFixed(0)}%</span>
+              </div>
+              <div style="height:8px; background:var(--border); border-radius:4px; overflow:hidden;">
+                <div style="height:100%; width:${cat.percent}%; background:${cat.color}; border-radius:4px; transition: width 0.3s;"></div>
+              </div>
+            </div>
+          `).join('')}
+
+          <div style="display:flex; justify-content:space-between; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); font-weight: 700;">
+            <span>Итого</span>
+            <span>${formatMoney(analytics.totalMinor)} ₽</span>
+          </div>
+        </div>
+      `;
+    }
+
+    const activePlanIds = new Set([
+      ...plan.incomes,
+      ...plan.expenses,
+      ...plan.inactiveIncomes,
+      ...plan.inactiveExpenses
+    ].map(t => t.id));
+
+    container.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 20px;">Бюджет</h2>
+      ${isReadOnly ? `<div style="background:var(--yellow); color:#000; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; font-weight:600; text-align:center;">${readOnlyLabel}</div>` : ''}
+
+      <div class="card">
+        <!-- БЛОК ВЫБОРА МЕСЯЦА СО СТРЕЛОЧКАМИ -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; gap: 8px;">
+          <button class="btn btn-icon" id="btn-prev-month" style="padding: 8px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--border); width: 40px; height: 40px; display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+
+          <button class="btn btn-outline" id="btn-pick-month" style="flex: 1; padding:10px; font-size:14px; text-transform: capitalize; font-weight: 600; border: none; background: transparent; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+            ${formatMonthTitle(currentMonth)}
+            <span style="font-size:10px; color:var(--muted); font-weight:normal;">нажмите для выбора</span>
+          </button>
+
+          <button class="btn btn-icon" id="btn-next-month" style="padding: 8px; border-radius: 50%; background: var(--card-2); border: 1px solid var(--border); width: 40px; height: 40px; display:flex; align-items:center; justify-content:center;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+
+        ${summaryHtml}
+
+        ${!isReadOnly ? `
+        <div class="actions-row" style="margin-bottom: 8px;">
+          <button class="btn btn-outline" id="btn-add-income">+ План доход</button>
+          <button class="btn btn-outline" id="btn-add-expense">+ План расход</button>
+        </div>
+        <div class="actions-row" style="margin-bottom: 8px;">
+          <button class="btn" id="btn-add-fact-income" style="background:var(--green); color:#000;">+ Факт доход</button>
+          <button class="btn" id="btn-add-fact-expense" style="background:var(--red);">+ Факт расход</button>
+        </div>
+        ` : ''}
+
+        <button class="btn btn-text" id="btn-toggle-yearly" style="width: 100%; margin-top: 8px; border: 1px dashed var(--border); padding: 10px;">
+          ${isYearlyViewVisible ? 'Скрыть прогноз на год' : 'Показать прогноз на 12 месяцев'}
+        </button>
+      </div>
+
+      ${yearlyHtml}
+      ${analyticsHtml}
+
+      <div class="card">
+        <h2>Плановые операции</h2>
+        ${renderTransactionsList(plan.incomes, plan.inactiveIncomes, 'План: Доходы', 'income', factIncomes, isReadOnly)}
+        ${renderTransactionsList(plan.expenses, plan.inactiveExpenses, 'План: Расходы', 'expense', factExpenses, isReadOnly)}
+        ${(!plan.incomes.length && !plan.expenses.length) ? '<p class="muted">Нет плановых операций.</p>' : ''}
+      </div>
+
+      <div class="card">
+        <h2>Фактические операции (без плана)</h2>
+        ${renderStandaloneFacts(factIncomes, factExpenses, activePlanIds, isReadOnly)}
+      </div>
+
+      <div class="modal-overlay" id="form-modal">
+        <div class="modal-content" id="form-modal-content"></div>
+      </div>
+
+      <div class="modal-overlay" id="month-modal">
+        <div class="modal-content">
+          <h3>Выберите месяц</h3>
+          <div style="display: flex; gap: 8px; margin-bottom: 16px;">
+            <select id="month-select-year" style="flex: 1; padding: 12px;"></select>
+            <select id="month-select-month" style="flex: 2; padding: 12px;"></select>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-outline" id="btn-month-cancel">Отмена</button>
+            <button class="btn" id="btn-month-apply">Применить</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    initSwipe(container, isReadOnly);
+
+    const changeMonth = (offset) => {
+      let [y, m] = currentMonth.split('-').map(Number);
+      m += offset;
+      if (m > 12) { m = 1; y += 1; }
+      if (m < 1) { m = 12; y -= 1; }
+      currentMonth = `${y}-${String(m).padStart(2, '0')}`;
+      render();
+    };
+
+    document.getElementById('btn-prev-month').addEventListener('click', () => changeMonth(-1));
+    document.getElementById('btn-next-month').addEventListener('click', () => changeMonth(1));
+
+    document.getElementById('btn-pick-month').addEventListener('click', () => {
+      const modal = document.getElementById('month-modal');
+      const yearSelect = document.getElementById('month-select-year');
+      const monthSelect = document.getElementById('month-select-month');
+
+      const currentY = parseInt(currentMonth.split('-')[0], 10);
+      const currentM = parseInt(currentMonth.split('-')[1], 10);
+
+      yearSelect.innerHTML = '';
+      for (let y = now.getFullYear() - 5; y <= now.getFullYear() + 20; y++) {
+        yearSelect.innerHTML += `<option value="${y}" ${y === currentY ? 'selected' : ''}>${y}</option>`;
+      }
+
+      const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+      monthSelect.innerHTML = '';
+      months.forEach((m, i) => {
+        monthSelect.innerHTML += `<option value="${i + 1}" ${i + 1 === currentM ? 'selected' : ''}>${m}</option>`;
+      });
+
+      modal.classList.add('active');
+    });
+
+    document.getElementById('btn-month-cancel').addEventListener('click', () => {
+      document.getElementById('month-modal').classList.remove('active');
+    });
+
+    document.getElementById('btn-month-apply').addEventListener('click', () => {
+      const y = document.getElementById('month-select-year').value;
+      const m = document.getElementById('month-select-month').value;
+      currentMonth = `${y}-${String(m).padStart(2, '0')}`;
+      document.getElementById('month-modal').classList.remove('active');
+      render();
+    });
+
+    document.getElementById('btn-toggle-yearly').addEventListener('click', () => {
+      isYearlyViewVisible = !isYearlyViewVisible;
+      render();
+    });
+
+    container.querySelectorAll('.yearly-row[data-month]').forEach(row => {
+      row.addEventListener('click', () => {
+        currentMonth = row.dataset.month;
+        isYearlyViewVisible = false;
+        render();
+      });
+    });
+
+    if (!isReadOnly) {
+      document.getElementById('btn-add-income').addEventListener('click', () => showPlannedForm('income'));
+      document.getElementById('btn-add-expense').addEventListener('click', () => showPlannedForm('expense'));
+      document.getElementById('btn-add-fact-income').addEventListener('click', () => showFactForm('income'));
+      document.getElementById('btn-add-fact-expense').addEventListener('click', () => showFactForm('expense'));
+
+      container.querySelectorAll('[data-action="add-fact-to-plan"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const planId = btn.dataset.planId;
+          const allPlans = [...plan.incomes, ...plan.expenses];
+          const plannedTx = allPlans.find(t => t.id === planId);
+          if (plannedTx) showFactForm(plannedTx.type, plannedTx);
+        });
+      });
+
+      container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          const isActive = btn.dataset.active === 'true';
+          await executeCommand(db, {
+            commandId: generateId(),
+            commandType: 'plannedTransaction.update',
+            payload: { id, isActive: !isActive }
+          });
+          render();
+        });
+      });
+
+      container.querySelectorAll('[data-action="edit"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const txId = btn.dataset.id;
+          const allTxs = [...plan.incomes, ...plan.expenses, ...plan.inactiveIncomes, ...plan.inactiveExpenses];
+          const tx = allTxs.find(t => t.id === txId);
+          if (tx) showPlannedForm(tx.type, tx);
+        });
+      });
+    }
+
+    document.getElementById('form-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'form-modal') {
+        e.target.classList.remove('active');
+      }
+    });
+  }
+
+  function initSwipe(container, isReadOnly) {
+    if (isReadOnly) return;
+
+    container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+      const item = wrapper.querySelector('.swipe-item');
+      let startX = 0;
+      let currentX = 0;
+      let isDragging = false;
+      let isOpen = false;
+      const threshold = 40;
+      const openDistance = -80;
+
+      const deleteBtn = wrapper.querySelector('.swipe-action');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const type = deleteBtn.dataset.type;
+          const id = deleteBtn.dataset.id;
+          if (type === 'plan') {
+            if (!confirm('Удалить этот план? (Факты останутся)')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'plannedTransaction.delete', payload: { id } });
+          } else {
+            if (!confirm('Удалить этот факт?')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'actualTransaction.delete', payload: { id } });
+          }
+          render();
+        });
+      }
+
+      const desktopDelete = wrapper.querySelector('.desktop-delete');
+      if (desktopDelete) {
+        desktopDelete.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const type = desktopDelete.dataset.type;
+          const id = desktopDelete.dataset.id;
+          if (type === 'plan') {
+            if (!confirm('Удалить этот план? (Факты останутся)')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'plannedTransaction.delete', payload: { id } });
+          } else {
+            if (!confirm('Удалить этот факт?')) return;
+            await executeCommand(db, { commandId: generateId(), commandType: 'actualTransaction.delete', payload: { id } });
+          }
+          render();
+        });
+      }
+
+      item.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+        item.style.transition = 'none';
+      }, { passive: true });
+
+      item.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const deltaX = e.touches[0].clientX - startX;
+
+        if (deltaX > 0 && !isOpen) {
+          currentX = 0;
+        } else if (deltaX < 0 && isOpen) {
+          currentX = Math.max(openDistance + deltaX, openDistance);
+        } else {
+          currentX = Math.min(0, deltaX);
+        }
+        item.style.transform = `translateX(${currentX}px)`;
+      }, { passive: true });
+
+      item.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        item.style.transition = 'transform 0.3s ease';
+
+        if (currentX < -threshold) {
+          item.style.transform = `translateX(${openDistance}px)`;
+          isOpen = true;
+          currentX = openDistance;
+        } else {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target) && isOpen) {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+    });
+  }
+
+  function renderTransactionsList(activeItems, inactiveItems, title, type, allFactItems, isReadOnly) {
+    const allItems = [...activeItems, ...inactiveItems];
+    if (!allItems.length) return '';
+
+    return `
+      <div style="margin-bottom: 16px;">
+        <h3 style="font-size:14px; color:var(--muted); margin-bottom:8px;">${title}</h3>
+        ${allItems.map(tx => {
+          const isInactive = tx.isActive === false;
+          const dateInfo = tx.dayOfMonth ? `${tx.dayOfMonth}-е число` : (tx.date ? new Date(tx.date).toLocaleDateString('ru-RU') : 'Без даты');
+
+          const linkedFacts = allFactItems.filter(f => f.plannedTransactionId === tx.id);
+          const totalLinkedFact = linkedFacts.reduce((sum, f) => sum + f.amountMinor, 0);
+
+          return `
+          <div class="swipe-wrapper" style="margin-bottom: 12px;">
+            ${!isReadOnly ? `<div class="swipe-action" data-type="plan" data-id="${tx.id}">Удалить</div>` : ''}
+            <div class="event-item swipe-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'};">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                  <div class="event-title" style="${isInactive ? 'text-decoration: line-through;' : ''}">${tx.title}</div>
+                  <div class="event-meta">
+                    План: ${formatMoney(tx.amountMinor)} ₽ • ${tx.frequency === 'regular' ? 'Регулярно' : 'Разово'} • ${dateInfo}
+                  </div>
+                  ${linkedFacts.length > 0 ? `<div class="event-meta" style="color:var(--green)">Внесено факт: ${formatMoney(totalLinkedFact)} ₽</div>` : ''}
+                </div>
+                <div style="display:flex; flex-direction:column; gap:8px; align-items: flex-end;">
+                  ${!isReadOnly ? `<button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>` : ''}
+
+                  ${!isReadOnly ? `
+                  <div style="display:flex; gap:8px; align-items: center;">
+                    <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); display:flex; align-items:center; justify-content:center;">${ICON_EDIT}</button>
+                    <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="display:flex; align-items:center; justify-content:center;">
+                      ${tx.isActive !== false ? ICON_SHOW : ICON_HIDE}
+                    </button>
+                    <button class="btn-icon desktop-delete" data-type="plan" data-id="${tx.id}" title="Удалить" style="color: var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
+                  </div>` : ''}
+                </div>
+              </div>
+
+              ${linkedFacts.length > 0 ? `
+                <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border);">
+                  ${linkedFacts.map(f => `
+                    <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); margin-bottom: 4px;">
+                      <span>Факт: ${new Date(f.actualDate).toLocaleDateString('ru-RU')}</span>
+                      <span style="display:flex; gap:8px; align-items:center;">
+                        <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
+                        ${!isReadOnly ? `<button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>` : ''}
+                      </span>
+                    </div>
+                  `).join('')}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `}).join('')}
+      </div>
+    `;
+  }
+
+  function renderStandaloneFacts(factsIn, factsEx, activePlanIds, isReadOnly) {
+    const standalone = [...factsIn, ...factsEx].filter(f => !f.plannedTransactionId || !activePlanIds.has(f.plannedTransactionId));
+    if (!standalone.length) return '<p class="muted">Нет внеплановых фактов.</p>';
+
+    return standalone.map(f => `
+      <div class="swipe-wrapper" style="margin-bottom: 8px;">
+        ${!isReadOnly ? `<div class="swipe-action" data-type="fact" data-id="${f.id}">Удалить</div>` : ''}
+        <div class="event-item swipe-item" style="border-left-color: ${f.type === 'income' ? 'var(--green)' : 'var(--red)'};">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <div class="event-title">${f.title}</div>
+              <div class="event-meta">${new Date(f.actualDate).toLocaleDateString('ru-RU')}</div>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center;">
+              <b style="color:${f.type === 'income' ? 'var(--green)' : 'var(--red)'}">${formatMoney(f.amountMinor)} ₽</b>
+              ${!isReadOnly ? `<button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function getCategoriesForType(type) {
+    return allCategories
+      .filter(c => c.type === type && !c.isArchived)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  function showPlannedForm(type, existingTx = null) {
+    const modal = document.getElementById('form-modal');
+    const content = document.getElementById('form-modal-content');
+    const isIncome = type === 'income';
+
+    const titleVal = existingTx ? existingTx.title : '';
+    const amountVal = existingTx ? existingTx.amountMinor / 100 : '';
+    const freqVal = existingTx ? existingTx.frequency : 'regular';
+    const startMonthVal = existingTx ? existingTx.startMonth : currentMonth;
+    const endMonthVal = existingTx && existingTx.endMonth ? existingTx.endMonth : '';
+    const dayOfMonthVal = existingTx && existingTx.dayOfMonth ? existingTx.dayOfMonth : '';
+    const dateVal = existingTx && existingTx.date ? existingTx.date : '';
+    const categoryVal = existingTx && existingTx.category ? existingTx.category : '';
+
+    const categories = getCategoriesForType(type);
+
+    content.innerHTML = `
+      <h3 style="color: ${isIncome ? 'var(--green)' : 'var(--red)'};">${existingTx ? 'Редактировать план' : 'Добавить план'}: ${isIncome ? 'Доход' : 'Расход'}</h3>
+      <form id="tx-form" class="create-goal-form" style="margin-top: 16px;">
+        <input type="text" id="tx-title" placeholder="Название" value="${titleVal}" required>
+        <input type="number" id="tx-amount" placeholder="Сумма (в рублях)" value="${amountVal}" required min="1" step="0.01">
+
+        <select id="tx-category">
+          ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
+        </select>
+
+        <div class="form-row-bottom">
+          <select id="tx-frequency">
+            <option value="regular" ${freqVal === 'regular' ? 'selected' : ''}>Регулярный</option>
+            <option value="one-time" ${freqVal === 'one-time' ? 'selected' : ''}>Разовый</option>
+          </select>
+          <input type="month" id="tx-start-month" value="${startMonthVal}" required>
+        </div>
+
+        <div id="regular-fields" style="display: ${freqVal === 'regular' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
+           <div class="form-group">
+              <label>День месяца (для календаря, 1-31):</label>
+              <input type="number" id="tx-day-of-month" value="${dayOfMonthVal}" placeholder="Например, 5" min="1" max="31">
+           </div>
+           <div class="form-group">
+              <label>Месяц окончания (необязательно):</label>
+              <input type="month" id="tx-end-month" value="${endMonthVal}">
+           </div>
+        </div>
+
+        <div id="one-time-fields" style="display: ${freqVal === 'one-time' ? 'flex' : 'none'}; flex-direction: column; gap: 8px;">
+           <div class="form-group">
+              <label>Конкретная дата (для календаря):</label>
+              <input type="date" id="tx-date" value="${dateVal}">
+           </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button type="button" class="btn btn-outline" id="btn-cancel">Отмена</button>
+          <button type="submit" class="btn">Сохранить</button>
+        </div>
+      </form>
+    `;
+    modal.classList.add('active');
+
+    const freqSelect = document.getElementById('tx-frequency');
+    const regFields = document.getElementById('regular-fields');
+    const oneTimeFields = document.getElementById('one-time-fields');
+
+    freqSelect.addEventListener('change', (e) => {
+      const isReg = e.target.value === 'regular';
+      regFields.style.display = isReg ? 'flex' : 'none';
+      oneTimeFields.style.display = isReg ? 'none' : 'flex';
+    });
+
+    document.getElementById('btn-cancel').addEventListener('click', () => modal.classList.remove('active'));
+
+    document.getElementById('tx-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('tx-title').value;
+      const amountMinor = Math.round(parseFloat(document.getElementById('tx-amount').value) * 100);
+      const frequency = freqSelect.value;
+      const startMonth = document.getElementById('tx-start-month').value;
+      const category = document.getElementById('tx-category').value;
+
+      const dayOfMonthVal = document.getElementById('tx-day-of-month').value;
+      const endMonthVal = document.getElementById('tx-end-month').value;
+      const dateVal = document.getElementById('tx-date').value;
+
+      const dayOfMonth = frequency === 'regular' && dayOfMonthVal ? parseInt(dayOfMonthVal, 10) : null;
+      const endMonth = frequency === 'regular' ? endMonthVal || null : null;
+      const date = frequency === 'one-time' ? dateVal || null : null;
+
+      try {
+        if (existingTx) {
+          await executeCommand(db, {
+            commandId: generateId(),
+            commandType: 'plannedTransaction.update',
+            payload: { id: existingTx.id, title, amountMinor, frequency, startMonth, endMonth, dayOfMonth, date, category }
+          });
+        } else {
+          await executeCommand(db, {
+            commandId: generateId(),
+            commandType: 'plannedTransaction.create',
+            payload: { type, title, amountMinor, frequency, startMonth, endMonth, dayOfMonth, date, category }
+          });
+        }
+        modal.classList.remove('active');
+        render();
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      }
+    });
+  }
+
+  function showFactForm(type, plannedTx = null) {
+    const modal = document.getElementById('form-modal');
+    const content = document.getElementById('form-modal-content');
+    const isIncome = type === 'income';
+    const today = new Date().toISOString().slice(0, 10);
+
+    const titleVal = plannedTx ? plannedTx.title : '';
+    const amountVal = plannedTx ? plannedTx.amountMinor / 100 : '';
+    const categoryVal = plannedTx && plannedTx.category ? plannedTx.category : '';
+
+    const categories = getCategoriesForType(type);
+
+    content.innerHTML = `
+      <h3 style="color: ${isIncome ? 'var(--green)' : 'var(--red)'};">Внести факт: ${isIncome ? 'Доход' : 'Расход'}</h3>
+      <form id="fact-form" class="create-goal-form" style="margin-top: 16px;">
+        <input type="text" id="fact-title" placeholder="Название" value="${titleVal}" required>
+        <input type="number" id="fact-amount" placeholder="Фактическая сумма (₽)" value="${amountVal}" required min="1" step="0.01">
+        <select id="fact-category">
+          ${categories.map(c => `<option value="${c.id}" ${categoryVal === c.id ? 'selected' : ''}>${c.emoji || ''} ${c.name}</option>`).join('')}
+        </select>
+        <div class="form-group">
+          <label>Дата фактической операции:</label>
+          <input type="date" id="fact-date" value="${today}" required>
+        </div>
+        <div class="modal-actions" style="margin-top: 16px;">
+          <button type="button" class="btn btn-outline" id="btn-cancel-fact">Отмена</button>
+          <button type="submit" class="btn">Сохранить</button>
+        </div>
+      </form>
+    `;
+    modal.classList.add('active');
+
+    document.getElementById('btn-cancel-fact').addEventListener('click', () => modal.classList.remove('active'));
+
+    document.getElementById('fact-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title = document.getElementById('fact-title').value;
+      const amountMinor = Math.round(parseFloat(document.getElementById('fact-amount').value) * 100);
+      const actualDate = document.getElementById('fact-date').value;
+      const category = document.getElementById('fact-category').value;
+
+      try {
+        await executeCommand(db, {
+          commandId: generateId(),
+          commandType: 'actualTransaction.create',
+          payload: {
+            type,
+            title,
+            amountMinor,
+            actualDate,
+            category,
+            plannedTransactionId: plannedTx ? plannedTx.id : null
+          }
+        });
+        modal.classList.remove('active');
+        render();
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+      }
+    });
+  }
+
+  await render();
+}
