@@ -1,10 +1,38 @@
 /* ==========================================================================
-   Схема базы данных IndexedDB (модель v13.0).
-   Добавлена таблица categories для управления категориями.
+   Схема базы данных IndexedDB (модель v14.0).
+   Добавлены таблицы для синхронизации:
+   - syncOutbox — журнал исходящих изменений (очередь на отправку в облако)
+   - syncMeta   — служебные метаданные синхронизации (lastSync и др.)
+   Синхронизируемые записи получают поля:
+   - _syncUpdatedAt — время последнего локального изменения
+   - _fieldVersions — {поле: timestamp} для field-level merge
    ========================================================================== */
 
 export const DB_NAME = 'finance-planner-db';
-export const DB_VERSION = 13;
+export const DB_VERSION = 14;
+
+/**
+ * Сторы, участвующие в облачной синхронизации.
+ * Для всех записей в этих сторах executeCommand будет поддерживать
+ * _syncUpdatedAt и _fieldVersions, а также писать в syncOutbox.
+ */
+export const SYNCABLE_STORES = [
+  'goals',
+  'plannedOperations',
+  'plannedTransactions',
+  'actualTransactions',
+  'actualIncomes',
+  'actualContributions',
+  'initialContributions',
+  'investmentIncomes',
+  'moneyLots',
+  'moneyMovements',
+  'moneyEntries',
+  'pool',
+  'categories',
+  'settings',
+  'parameterHistory'
+];
 
 export const STORES = {
   goals: {
@@ -133,6 +161,19 @@ export const STORES = {
     ]
   },
   meta: {
+    keyPath: 'id',
+    indexes: []
+  },
+  // === НОВОЕ В v14 ===
+  syncOutbox: {
+    keyPath: 'id',
+    indexes: [
+      { name: 'createdAt', keyPath: 'createdAt' },
+      { name: 'entityId', keyPath: 'entityId' },
+      { name: 'storeName', keyPath: 'storeName' }
+    ]
+  },
+  syncMeta: {
     keyPath: 'id',
     indexes: []
   }
