@@ -1,6 +1,7 @@
 /* ==========================================================================
    Экран «Настройки».
    - Современный дизайн (аккордеоны, минимум эмодзи, чистые формы).
+   - Добавлен экспорт в CSV, HTML и PDF (через Print).
    ========================================================================== */
 import { generateBackup, restoreBackup } from '../../../infrastructure/backup/exportBackup.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -71,22 +72,36 @@ export async function renderSettingsScreen(container, db) {
         </div>
       </details>
 
-      <!-- РЕЗЕРВНОЕ КОПИРОВАНИЕ -->
+      <!-- РЕЗЕРВНОЕ КОПИРОВАНИЕ И ЭКСПОРТ -->
       <details class="settings-accordion">
-        <summary>Резервное копирование</summary>
+        <summary>Данные и Экспорт</summary>
         <div class="accordion-content">
           <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
-            Сохраните копию данных, чтобы не потерять их при смене телефона.
+            Сохраните копию данных или выгрузите красивый отчет.
           </p>
+
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
+            <button id="btn-export-html" class="btn" style="background: var(--accent); color: #fff;">
+              📄 Красивый отчет (HTML)
+            </button>
+            <div style="display: flex; gap: 8px;">
+              <button id="btn-export-pdf" class="btn btn-outline" style="flex: 1;">
+                📑 Сохранить в PDF
+              </button>
+              <button id="btn-export-csv" class="btn btn-outline" style="flex: 1;">
+                📊 Таблица (CSV)
+              </button>
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid var(--border); margin: 16px 0;"></div>
 
           <div style="display: flex; flex-direction: column; gap: 12px;">
             <button id="btn-export" class="btn" style="background: var(--green); color: #000;">
-              Скачать файл бэкапа
+              Скачать файл бэкапа (JSON)
             </button>
 
-            <div style="border-top: 1px solid var(--border); margin: 8px 0;"></div>
-
-            <p style="font-size: 12px; color: var(--muted);">
+            <p style="font-size: 12px; color: var(--muted); margin-top: 8px;">
               <strong>Внимание!</strong> Восстановление удалит все текущие данные и заменит их из файла.
             </p>
 
@@ -125,7 +140,7 @@ export async function renderSettingsScreen(container, db) {
       <!-- ПОДВАЛ -->
       <section class="card" style="opacity: 0.6; text-align: center; font-size: 12px; padding: 16px; border: none;">
         <div>Планировщик финансов v4.0</div>
-        <div>Schema v13 · Sync v2</div>
+        <div>Schema v14 · Sync v1</div>
       </section>
 
       <!-- МОДАЛКА -->
@@ -148,7 +163,160 @@ export async function renderSettingsScreen(container, db) {
       catch (err) { shareAnchor.innerHTML = `<section class="card"><p class="muted">Ошибка совместного доступа: ${err.message}</p></section>`; }
     }
 
-    // --- Обработчики ---
+    // --- ЛОГИКА ЭКСПОРТА ---
+    
+    const formatRub = (minor) => (minor / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+
+    // 1. Экспорт в CSV
+    document.getElementById('btn-export-csv').addEventListener('click', () => {
+      let csv = 'Дата;Тип;Название;Категория;Сумма (руб)\n';
+      actualTransactions.sort((a,b) => new Date(b.actualDate) - new Date(a.actualDate)).forEach(t => {
+        const catName = categories.find(c => c.id === t.category)?.name || 'Без категории';
+        const typeRu = t.type === 'income' ? 'Доход' : 'Расход';
+        csv += `${new Date(t.actualDate).toLocaleDateString('ru-RU')};${typeRu};${t.title.replace(/;/g, ' ')};${catName};${(t.amountMinor/100).toFixed(2).replace('.', ',')}\n`;
+      });
+      
+      const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); // BOM для Excel
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // 2. Генерация HTML отчета
+    const generateReportHTML = () => {
+      const totalIncomes = actualTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amountMinor, 0);
+      const totalExpenses = actualTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amountMinor, 0);
+      const activeGoals = goals.filter(g => g.status === 'active');
+      
+      return `
+        <!DOCTYPE html>
+        <html lang="ru">
+        <head>
+          <meta charset="UTF-8">
+          <title>Финансовый отчет</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: #333; line-height: 1.5; padding: 40px; max-width: 800px; margin: 0 auto; }
+            h1 { color: #111; border-bottom: 2px solid #7c5cff; padding-bottom: 10px; }
+            h2 { color: #444; margin-top: 30px; }
+            .summary { display: flex; gap: 20px; margin-bottom: 30px; }
+            .box { flex: 1; background: #f5f5f5; padding: 20px; border-radius: 8px; text-align: center; }
+            .box h3 { margin: 0 0 10px 0; font-size: 14px; color: #666; text-transform: uppercase; }
+            .box .val { font-size: 24px; font-weight: bold; }
+            .income .val { color: #2e7d32; }
+            .expense .val { color: #c62828; }
+            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #f9f9f9; font-weight: bold; }
+            .goal-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #eee; }
+            @media print {
+              body { padding: 0; }
+              .box { border: 1px solid #ddd; }
+            }
+          </style>
+        </head>
+        <body>
+          <h1>Финансовый отчет семьи</h1>
+          <p style="color: #666;">Дата формирования: ${new Date().toLocaleDateString('ru-RU')}</p>
+          
+          <h2>Общая картина</h2>
+          <div class="summary">
+            <div class="box income">
+              <h3>Всего доходов (факт)</h3>
+              <div class="val">${formatRub(totalIncomes)} ₽</div>
+            </div>
+            <div class="box expense">
+              <h3>Всего расходов (факт)</h3>
+              <div class="val">${formatRub(totalExpenses)} ₽</div>
+            </div>
+            <div class="box">
+              <h3>Остаток</h3>
+              <div class="val" style="color: ${totalIncomes - totalExpenses >= 0 ? '#2e7d32' : '#c62828'}">
+                ${formatRub(totalIncomes - totalExpenses)} ₽
+              </div>
+            </div>
+          </div>
+
+          <h2>Прогресс целей</h2>
+          ${activeGoals.length === 0 ? '<p>Нет активных целей.</p>' : ''}
+          ${activeGoals.map(g => {
+             const percent = g.targetAmountMinor > 0 ? Math.min(100, (g.currentAmountMinor / g.targetAmountMinor) * 100) : 0;
+             return `
+              <div class="goal-row">
+                <span><b>${g.name}</b></span>
+                <span>${formatRub(g.currentAmountMinor)} / ${formatRub(g.targetAmountMinor)} ₽ (${percent.toFixed(1)}%)</span>
+              </div>
+             `;
+          }).join('')}
+
+          <h2>Последние 50 операций (Факт)</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Дата</th>
+                <th>Тип</th>
+                <th>Название</th>
+                <th style="text-align: right;">Сумма</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${actualTransactions.sort((a,b) => new Date(b.actualDate) - new Date(a.actualDate)).slice(0, 50).map(t => `
+                <tr>
+                  <td>${new Date(t.actualDate).toLocaleDateString('ru-RU')}</td>
+                  <td style="color: ${t.type === 'income' ? '#2e7d32' : '#c62828'}">${t.type === 'income' ? 'Доход' : 'Расход'}</td>
+                  <td>${t.title}</td>
+                  <td style="text-align: right; font-weight: bold; color: ${t.type === 'income' ? '#2e7d32' : '#c62828'}">
+                    ${t.type === 'income' ? '+' : '-'}${formatRub(t.amountMinor)} ₽
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </body>
+        </html>
+      `;
+    };
+
+    // 3. Скачивание HTML
+    document.getElementById('btn-export-html').addEventListener('click', () => {
+      const htmlContent = generateReportHTML();
+      const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${new Date().toISOString().slice(0, 10)}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // 4. Печать в PDF (через iframe, чтобы не открывать новые вкладки, которые блокирует Safari)
+    document.getElementById('btn-export-pdf').addEventListener('click', () => {
+      const htmlContent = generateReportHTML();
+      const iframe = document.createElement('iframe');
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(htmlContent);
+      doc.close();
+
+      // Ждем загрузки стилей и вызываем печать
+      setTimeout(() => {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+        setTimeout(() => document.body.removeChild(iframe), 2000);
+      }, 500);
+    });
+
+    // --- СТАРЫЕ ОБРАБОТЧИКИ ---
     document.getElementById('btn-save-inflation').addEventListener('click', async (e) => {
       const input = document.getElementById('inflation-input');
       const btn = e.target;
