@@ -1,11 +1,11 @@
 // src/auth/authService.js
-import { supabase } from '../supabaseClient.js';
+import { getSupabaseClient } from '../supabaseClient.js';
 
 /**
  * Регистрация нового пользователя по email + паролю.
- * Возвращает объект с данными пользователя или бросает ошибку.
  */
 export async function signUpWithEmail(email, password) {
+  const supabase = getSupabaseClient();
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) throw error;
   return data;
@@ -15,6 +15,7 @@ export async function signUpWithEmail(email, password) {
  * Вход существующего пользователя.
  */
 export async function signInWithEmail(email, password) {
+  const supabase = getSupabaseClient();
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw error;
   return data;
@@ -24,16 +25,16 @@ export async function signInWithEmail(email, password) {
  * Выход из аккаунта.
  */
 export async function signOut() {
+  const supabase = getSupabaseClient();
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
 
 /**
  * Получить текущую сессию (null, если пользователь не вошёл).
- * Сессия сохраняется автоматически в localStorage браузера,
- * поэтому вход продолжает работать после перезапуска PWA и офлайн.
  */
 export async function getCurrentSession() {
+  const supabase = getSupabaseClient();
   const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
   return data.session;
@@ -43,6 +44,7 @@ export async function getCurrentSession() {
  * Получить текущего пользователя (null, если не вошёл).
  */
 export async function getCurrentUser() {
+  const supabase = getSupabaseClient();
   const { data, error } = await supabase.auth.getUser();
   if (error) throw error;
   return data.user;
@@ -50,9 +52,9 @@ export async function getCurrentUser() {
 
 /**
  * Подписка на изменения состояния аутентификации.
- * Возвращает объект с методом unsubscribe().
  */
 export function onAuthStateChange(callback) {
+  const supabase = getSupabaseClient();
   const { data } = supabase.auth.onAuthStateChange((event, session) => {
     callback(event, session);
   });
