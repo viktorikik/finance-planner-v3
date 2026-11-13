@@ -820,12 +820,14 @@ export async function renderPlanScreen(container, db) {
         <h3>Изменить взнос</h3>
         <p style="margin-bottom: 16px;">Введите новую сумму для этого месяца (в рублях).</p>
         <div class="modal-input">
-          <input type="number" id="edit-op-amount" value="${currentAmount}" required min="1" step="1">
+          <input type="number" id="edit-op-amount" value="${currentAmount}" required min="1" step="1" style="font-size: 20px; font-weight: bold; text-align: center;">
         </div>
-        <label style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 14px; cursor: pointer;">
-          <input type="checkbox" id="edit-op-recalc" checked style="width: 20px; height: 20px; accent-color: var(--accent);">
-          <span>Пересчитать оставшиеся взносы</span>
-        </label>
+        <div style="background: rgba(124,92,255,0.1); padding: 12px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--accent);">
+          <label style="display: flex; align-items: flex-start; gap: 10px; font-size: 13px; cursor: pointer;">
+            <input type="checkbox" id="edit-op-recalc" checked style="width: 20px; height: 20px; accent-color: var(--accent); margin-top: 2px;">
+            <span style="color: var(--text); line-height: 1.4;">Пересчитать оставшиеся взносы (чтобы успеть к сроку)</span>
+          </label>
+        </div>
         <div class="modal-actions">
           <button class="btn btn-outline" id="btn-edit-cancel">Отмена</button>
           <button class="btn" id="btn-edit-save">Сохранить</button>
