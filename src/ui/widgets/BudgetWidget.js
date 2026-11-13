@@ -1,71 +1,62 @@
 /* ==========================================================================
-   Виджет бюджета для встраивания на экран «План».
+   Виджет «Бюджет» на экране «План».
    ========================================================================== */
 import { getAllFromStore } from '../../infrastructure/database/transaction.js';
-import { calculateBudgetExecution } from '../../domain/budget/budgetExecution.js';
+import { calculateMonthlyBudget } from '../../domain/budget/monthlyBudget.js';
+import { navigate } from '../../app/router.js';
+import { getSupabaseClient } from '../../supabaseClient.js';
 
-const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+export async function renderBudgetWidget(container, db, targetOwnerId = null) {
+  const supabase = getSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const myId = user?.id;
+  const ownerId = targetOwnerId || myId;
 
-export async function renderBudgetWidget(container, db) {
+  const tx = db.transaction(['plannedTransactions', 'actualTransactions', 'plannedOperations', 'goals', 'moneyEntries'], 'readonly');
+  
+  const allPlannedTx = await getAllFromStore('plannedTransactions', tx);
+  const allActualTx = await getAllFromStore('actualTransactions', tx);
+  const allGoals = await getAllFromStore('goals', tx);
+  const allPlannedOps = await getAllFromStore('plannedOperations', tx);
+  const allEntries = await getAllFromStore('moneyEntries', tx);
+
+  const plannedTx = allPlannedTx.filter(t => (t._ownerId || myId) === ownerId);
+  const actualTx = allActualTx.filter(t => (t._ownerId || myId) === ownerId);
+  const goals = allGoals.filter(g => (g._ownerId || myId) === ownerId);
+  const plannedOps = allPlannedOps.filter(op => (op._ownerId || myId) === ownerId);
+  const moneyEntries = allEntries.filter(e => (e._ownerId || myId) === ownerId);
+
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  let execution = { plan: { hasData: false }, totalFactIncome: 0, totalFactExpense: 0 };
-
-  try {
-    const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions'], 'readonly');
-    const goals = await getAllFromStore('goals', tx);
-    const plannedOperations = await getAllFromStore('plannedOperations', tx);
-    const plannedTransactions = await getAllFromStore('plannedTransactions', tx);
-    const actualTransactions = await getAllFromStore('actualTransactions', tx);
-
-    execution = calculateBudgetExecution(currentMonth, { goals, plannedOperations, plannedTransactions, actualTransactions });
-  } catch (err) {
-    console.warn('[BudgetWidget] Ошибка загрузки данных бюджета:', err);
-  }
-
-  const { plan, totalFactIncome, totalFactExpense } = execution;
-
-  if (!plan.hasData && totalFactIncome === 0 && totalFactExpense === 0) {
-    container.innerHTML = `
-      <div class="card" style="padding: 16px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="window.location.hash='/budget'">
-        <div>
-          <div style="font-weight:600; font-size:14px; color:var(--text);">Бюджет на месяц</div>
-          <div style="font-size:12px; color:var(--muted);">Данных пока нет</div>
-        </div>
-        <div style="font-size:20px; color:var(--muted);">→</div>
-      </div>
-    `;
-    return;
-  }
-
-  // Если есть факты, показываем реальный остаток. Иначе - плановый.
-  const hasFacts = totalFactIncome > 0 || totalFactExpense > 0;
-  const balance = hasFacts ? (totalFactIncome - totalFactExpense) : plan.balance;
-  const isNegative = balance < 0;
-  const balanceColor = isNegative ? 'var(--red)' : 'var(--green)';
+  // calculateMonthlyBudget требует передачу состояния (история)
+  // Создаем адаптер для совместимости с текущим Domain
+  const state = { plannedTransactions: plannedTx, actualTransactions: actualTx, goals, plannedOperations: plannedOps, moneyEntries };
   
-  const label = hasFacts ? 'Факт. остаток' : 'План. остаток';
-  const incomeVal = hasFacts ? totalFactIncome : plan.totalIncome;
-  const expenseVal = hasFacts ? totalFactExpense : (plan.totalExpense + plan.totalContribution);
-  const subLabel = hasFacts ? 'Факт' : 'План';
+  const budget = calculateMonthlyBudget(currentMonth, state);
+  const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+
+  // Вычисляем остаток: Доходы (план) - Расходы (план) - Взносы (план)
+  const plannedIncome = budget.plannedIncome || 0;
+  const plannedExpense = budget.plannedExpense || 0;
+  const plannedContributions = budget.plannedContributions || 0;
+  const balance = plannedIncome - plannedExpense - plannedContributions;
 
   container.innerHTML = `
-    <div class="card" style="padding: 16px; cursor:pointer;" onclick="window.location.hash='/budget'">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div class="card" style="cursor: pointer; border-color: var(--accent); background: rgba(124,92,255,0.05);" id="budget-widget-card">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
         <div>
-          <div style="font-weight:600; font-size:14px; color:var(--text); margin-bottom:4px;">Бюджет на месяц (${subLabel})</div>
-          <div style="font-size:12px; color:var(--muted);">
-            Доходы: +${formatMoney(incomeVal)} • Расходы: -${formatMoney(expenseVal)}
+          <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px;">Бюджет на этот месяц</div>
+          <div style="font-size: 20px; font-weight: 700; color: ${balance < 0 ? 'var(--red)' : 'var(--green)'};">
+            ${balance < 0 ? '' : '+'}${formatRub(balance)} ₽
           </div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-weight:700; font-size:18px; color:${balanceColor};">
-            ${formatMoney(balance)} ₽
-          </div>
-          <div style="font-size:11px; color:${balanceColor};">${label}</div>
-        </div>
+        <div style="color: var(--accent); font-size: 24px;">→</div>
       </div>
     </div>
   `;
+
+  document.getElementById('budget-widget-card').addEventListener('click', () => {
+    navigate('budget');
+  });
 }
