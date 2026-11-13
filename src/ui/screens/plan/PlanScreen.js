@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Жесткая верстка графиков через inline flexbox для идеального вида.
+   Добавлена возможность редактирования целевой суммы цели.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -287,6 +287,13 @@ export async function renderPlanScreen(container, db) {
         settingsHtml = `
           <form class="goal-settings-form" data-goal-id="${goal.id}">
             <div class="settings-section">
+              <h4>🎯 Основное</h4>
+              <div class="form-group">
+                <label>Целевая сумма (₽):</label>
+                <input type="number" name="targetAmountMinor" value="${goal.targetAmountMinor / 100}" required min="1">
+              </div>
+            </div>
+            <div class="settings-section">
               <h4>📅 Сроки</h4>
               <div class="form-group">
                 <label>Начать копить с:</label>
@@ -358,7 +365,7 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
-      // Верстка графика (inline-flex, чтобы не зависеть от CSS)
+      // Верстка графика (inline-flex)
       const visibleSchedule = isPlansExpanded ? schedule : schedule.slice(0, 3);
       const plansHtml = schedule.length > 0 ? `
         <div style="margin-top: 16px;">
@@ -374,17 +381,14 @@ export async function renderPlanScreen(container, db) {
               
               return `
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--border);">
-                  <!-- Дата -->
                   <div style="flex: 0 0 45px;">
                     <div style="font-weight: 600; font-size: 14px; text-transform: capitalize; color: var(--text);">${monthName}</div>
                     <div style="font-size: 11px; color: var(--muted);">'${yearShort}</div>
                   </div>
-                  <!-- Детали -->
                   <div style="flex: 1; display: flex; flex-direction: column; gap: 2px; margin-left: 8px;">
                     <span style="font-size: 12px; color: var(--muted);">Взнос: ${formatRub(row.contribution)} ₽</span>
                     <span style="font-size: 12px; color: var(--green);">Проценты: +${formatRub(row.interest)} ₽</span>
                   </div>
-                  <!-- Итог + Кнопка -->
                   <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
                     <span style="font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--text);">${formatRub(row.total)} ₽</span>
                     ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 18px; padding: 4px; line-height: 1;">×</button>` : '<span style="width: 26px; display: inline-block;"></span>'}
@@ -662,6 +666,7 @@ export async function renderPlanScreen(container, db) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const goalId = form.dataset.goalId;
+      const targetAmountVal = form.querySelector('[name="targetAmountMinor"]').value;
       const startMonthVal = form.querySelector('[name="startMonth"]').value;
       const deadlineVal = form.querySelector('[name="deadlineMonth"]').value;
       const annualRateVal = form.querySelector('[name="annualRate"]').value;
@@ -673,6 +678,7 @@ export async function renderPlanScreen(container, db) {
 
       const payload = {
         goalId,
+        targetAmountMinor: Math.round(Number(targetAmountVal) * 100),
         startMonth: startMonthVal || null,
         deadlineMonth: deadlineVal === '' ? null : deadlineVal,
         annualRate: annualRateVal === '' ? null : Number(annualRateVal),
