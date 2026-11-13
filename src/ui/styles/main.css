@@ -4,8 +4,8 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* Базовые токены (Светлая тема по умолчанию) */
 :root {
-  /* Светлая тема (по умолчанию) */
   --bg: #F6F4ED;
   --card: #FFFFFF;
   --card-2: #EEECE3;
@@ -15,18 +15,34 @@
   --accent-ink: #25251F;
   --border: #E8E6DC;
   
-  --green: #789879; /* Успех / Доходы */
-  --red: #D4776D;   /* Ошибка / Расходы */
-  --yellow: #D8A65A;/* Предупреждение */
+  --green: #789879;
+  --red: #D4776D;
+  --yellow: #D8A65A;
   
   --radius-lg: 20px;
   --radius-md: 16px;
   --radius-sm: 14px;
 }
 
+/* Тёмная тема (управляется классом на html) */
+html.theme-dark {
+  --bg: #201F1C;
+  --card: #2B2925;
+  --card-2: #36332D;
+  --text: #F1EEE5;
+  --muted: #AAA49A;
+  --accent: #D5E84A;
+  --accent-ink: #25251F;
+  --border: #403D36;
+  
+  --green: #789879;
+  --red: #D4776D;
+  --yellow: #D8A65A;
+}
+
+/* Системная тема (если выбран режим "Системная") */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Тёмная тема */
+  html:not(.theme-light):not(.theme-dark) {
     --bg: #201F1C;
     --card: #2B2925;
     --card-2: #36332D;
@@ -50,6 +66,7 @@ body {
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 #app { max-width: 680px; margin: 0 auto; min-height: calc(100vh - 32px); display: flex; flex-direction: column; }
