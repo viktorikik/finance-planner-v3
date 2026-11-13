@@ -2,7 +2,7 @@
    Экран «Настройки».
    - Современный дизайн (аккордеоны, минимум эмодзи, чистые формы).
    - Добавлен экспорт в CSV, HTML и PDF (через Print).
-   - Убран лишний визуальный шум (эмодзи из кнопок).
+   - Добавлено редактирование профиля (display_name).
    ========================================================================== */
 import { generateBackup, restoreBackup } from '../../../infrastructure/backup/exportBackup.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -10,6 +10,7 @@ import { getAllFromStore } from '../../../infrastructure/database/transaction.js
 import { generateId } from '../../../domain/shared/ids.js';
 import { renderSyncSection } from './SyncSection.js';
 import { renderShareSection } from './ShareSection.js';
+import { getSupabaseClient } from '../../../supabaseClient.js';
 
 const ICON_ARCHIVE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`;
 const ICON_RESTORE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/><path d="M12 16v-4m-2 2l2-2 2 2"/></svg>`;
@@ -17,10 +18,14 @@ const ICON_DELETE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
 const ICON_LOCK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-left: 4px; color: var(--muted);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`;
 
 export async function renderSettingsScreen(container, db) {
+  const supabase = getSupabaseClient();
+  
   async function render() {
     container.innerHTML = '<div class="loading">Загрузка настроек...</div>';
 
     let categories = [], settings = [], goals = [], plannedTransactions = [], actualTransactions = [];
+    let userProfile = null;
+
     try {
       const tx = db.transaction(['categories', 'settings', 'goals', 'plannedTransactions', 'actualTransactions'], 'readonly');
       categories = await getAllFromStore('categories', tx);
@@ -28,21 +33,46 @@ export async function renderSettingsScreen(container, db) {
       goals = await getAllFromStore('goals', tx);
       plannedTransactions = await getAllFromStore('plannedTransactions', tx);
       actualTransactions = await getAllFromStore('actualTransactions', tx);
+
+      // Загружаем профиль пользователя
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('display_name').eq('id', user.id).single();
+        userProfile = profile;
+      }
     } catch (err) {
       console.warn('[Settings] Ошибка загрузки:', err);
     }
 
     const inflationSetting = settings.find(s => s.id === 'generalInflationRate');
     const inflationValue = inflationSetting ? inflationSetting.value : 5;
+    
+    const displayNameValue = userProfile?.display_name || '';
+    const userEmail = (await supabase.auth.getUser()).data.user?.email || '';
 
     const expenseCats = categories.filter(c => c.type === 'expense').sort((a, b) => a.sortOrder - b.sortOrder);
     const incomeCats = categories.filter(c => c.type === 'income').sort((a, b) => a.sortOrder - b.sortOrder);
 
     const html = `
-      <!-- ОБЩИЕ НАСТРОЙКИ -->
-      <details class="settings-accordion">
-        <summary>Общие настройки</summary>
+      <!-- ОБЩИЕ НАСТРОЙКИ И ПРОФИЛЬ -->
+      <details class="settings-accordion" open>
+        <summary>Профиль и Общие настройки</summary>
         <div class="accordion-content">
+          
+          <div style="background: var(--card-2); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
+            <h4 style="margin-top:0; margin-bottom: 12px;">Ваш профиль</h4>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Как вас зовут?</label>
+              <p style="font-size:12px; color:var(--muted); margin-bottom:8px;">Это имя увидят те, с кем вы поделитесь доступом.</p>
+              <input type="text" id="profile-name-input" value="${displayNameValue}" placeholder="Например: Иван" maxlength="30">
+            </div>
+            <div class="form-group">
+              <label>Ваш Email (для входа)</label>
+              <input type="email" value="${userEmail}" disabled style="opacity: 0.5;">
+            </div>
+            <button class="btn btn-small" id="btn-save-profile" style="width: 100%;">Сохранить профиль</button>
+          </div>
+
           <div class="form-group">
             <label>Общая инфляция (%, в год)</label>
             <p style="font-size:12px; color:var(--muted); margin-bottom:12px;">Используется для расчета долгосрочных целей.</p>
@@ -165,11 +195,37 @@ export async function renderSettingsScreen(container, db) {
       catch (err) { shareAnchor.innerHTML = `<section class="card"><p class="muted">Ошибка совместного доступа: ${err.message}</p></section>`; }
     }
 
+    // --- ОБРАБОТЧИКИ ПРОФИЛЯ И НАСТРОЕК ---
+    document.getElementById('btn-save-profile').addEventListener('click', async (e) => {
+      const name = document.getElementById('profile-name-input').value.trim();
+      const btn = e.target;
+      try {
+        btn.disabled = true; btn.textContent = 'Сохранение...';
+        const { error } = await supabase.rpc('update_my_profile', { p_display_name: name });
+        if (error) throw error;
+        btn.textContent = 'Сохранено';
+        setTimeout(() => { btn.textContent = 'Сохранить профиль'; btn.disabled = false; }, 1500);
+      } catch (err) {
+        alert('Ошибка: ' + err.message);
+        btn.textContent = 'Сохранить профиль'; btn.disabled = false;
+      }
+    });
+
+    document.getElementById('btn-save-inflation').addEventListener('click', async (e) => {
+      const input = document.getElementById('inflation-input');
+      const btn = e.target;
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Сохранение...';
+        await executeCommand(db, { commandId: generateId(), commandType: 'settings.update', payload: { id: 'generalInflationRate', value: Number(input.value) } });
+        btn.textContent = 'Сохранено';
+        setTimeout(() => { btn.textContent = 'Сохранить инфляцию'; btn.disabled = false; }, 1500);
+      } catch (err) { alert('Ошибка: ' + err.message); btn.textContent = 'Сохранить инфляцию'; btn.disabled = false; }
+    });
+
     // --- ЛОГИКА ЭКСПОРТА ---
-    
     const formatRub = (minor) => (minor / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
 
-    // 1. Экспорт в CSV
     document.getElementById('btn-export-csv').addEventListener('click', () => {
       let csv = 'Дата;Тип;Название;Категория;Сумма (руб)\n';
       actualTransactions.sort((a,b) => new Date(b.actualDate) - new Date(a.actualDate)).forEach(t => {
@@ -178,7 +234,7 @@ export async function renderSettingsScreen(container, db) {
         csv += `${new Date(t.actualDate).toLocaleDateString('ru-RU')};${typeRu};${t.title.replace(/;/g, ' ')};${catName};${(t.amountMinor/100).toFixed(2).replace('.', ',')}\n`;
       });
       
-      const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' }); // BOM для Excel
+      const blob = new Blob(["\ufeff" + csv], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -187,7 +243,6 @@ export async function renderSettingsScreen(container, db) {
       URL.revokeObjectURL(url);
     });
 
-    // 2. Генерация HTML отчета
     const generateReportHTML = () => {
       const totalIncomes = actualTransactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amountMinor, 0);
       const totalExpenses = actualTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amountMinor, 0);
@@ -281,7 +336,6 @@ export async function renderSettingsScreen(container, db) {
       `;
     };
 
-    // 3. Скачивание HTML
     document.getElementById('btn-export-html').addEventListener('click', () => {
       const htmlContent = generateReportHTML();
       const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
@@ -293,7 +347,6 @@ export async function renderSettingsScreen(container, db) {
       URL.revokeObjectURL(url);
     });
 
-    // 4. Печать в PDF (через iframe, чтобы не открывать новые вкладки, которые блокирует Safari)
     document.getElementById('btn-export-pdf').addEventListener('click', () => {
       const htmlContent = generateReportHTML();
       const iframe = document.createElement('iframe');
@@ -310,25 +363,11 @@ export async function renderSettingsScreen(container, db) {
       doc.write(htmlContent);
       doc.close();
 
-      // Ждем загрузки стилей и вызываем печать
       setTimeout(() => {
         iframe.contentWindow.focus();
         iframe.contentWindow.print();
         setTimeout(() => document.body.removeChild(iframe), 2000);
       }, 500);
-    });
-
-    // --- СТАРЫЕ ОБРАБОТЧИКИ ---
-    document.getElementById('btn-save-inflation').addEventListener('click', async (e) => {
-      const input = document.getElementById('inflation-input');
-      const btn = e.target;
-      try {
-        btn.disabled = true;
-        btn.textContent = 'Сохранение...';
-        await executeCommand(db, { commandId: generateId(), commandType: 'settings.update', payload: { id: 'generalInflationRate', value: Number(input.value) } });
-        btn.textContent = 'Сохранено';
-        setTimeout(() => { btn.textContent = 'Сохранить инфляцию'; btn.disabled = false; }, 1500);
-      } catch (err) { alert('Ошибка: ' + err.message); btn.textContent = 'Сохранить инфляцию'; btn.disabled = false; }
     });
 
     container.querySelectorAll('[data-action="toggle-archive"]').forEach(btn => {
@@ -365,8 +404,8 @@ export async function renderSettingsScreen(container, db) {
         a.download = `finance-backup-${new Date().toISOString().slice(0, 10)}.json`;
         document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         btnExport.textContent = 'Файл сохранён';
-        setTimeout(() => { btnExport.textContent = 'Скачать файл бэкапа'; btnExport.disabled = false; }, 2000);
-      } catch (err) { alert('Ошибка: ' + err.message); btnExport.textContent = 'Скачать файл бэкапа'; btnExport.disabled = false; }
+        setTimeout(() => { btnExport.textContent = 'Скачать файл бэкапа (JSON)'; btnExport.disabled = false; }, 2000);
+      } catch (err) { alert('Ошибка: ' + err.message); btnExport.textContent = 'Скачать файл бэкапа (JSON)'; btnExport.disabled = false; }
     });
 
     const fileInput = document.getElementById('file-import');
