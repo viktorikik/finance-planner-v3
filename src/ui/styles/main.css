@@ -99,94 +99,6 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-bottom: 16px; }
 .progress-bar .fill { height: 100%; background: var(--green); transition: width 0.3s ease; }
 
-/* Единый блок деталей (Прогноз + График) */
-.goal-details-container {
-  background: rgba(15, 17, 23, 0.4);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.forecast-box {
-  background: rgba(124, 92, 255, 0.08);
-  border-radius: 8px;
-  padding: 12px;
-  font-size: 13px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.forecast-row { display: flex; justify-content: space-between; }
-
-/* Блок графика */
-.schedule-block {
-  display: flex;
-  flex-direction: column;
-}
-.schedule-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 12px;
-  color: var(--muted);
-  text-transform: uppercase;
-  font-weight: 600;
-  margin-bottom: 12px;
-}
-.schedule-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.schedule-row {
-  display: grid;
-  grid-template-columns: 60px 1fr auto;
-  align-items: center;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed var(--border);
-}
-.schedule-row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
-}
-.schedule-date {
-  display: flex;
-  flex-direction: column;
-  font-weight: 600;
-  font-size: 14px;
-  text-transform: capitalize;
-}
-.schedule-details {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.schedule-total {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: flex-end;
-}
-.schedule-total span {
-  font-weight: 700;
-  font-size: 15px;
-  white-space: nowrap;
-}
-.schedule-total button {
-  color: var(--muted);
-  font-size: 20px;
-  padding: 0 4px;
-  display: flex;
-  align-items: center;
-  height: 24px;
-}
-
 /* Кнопки действий */
 .goal-actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .goal-actions-grid > *:only-child { grid-column: span 2; }
@@ -240,136 +152,36 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 .form-group input, .form-group select { padding: 10px 12px; font-size: 14px; background: var(--card-2); }
 
 /* ==========================================================================
-   Таблица годового прогноза (Шаг D) — Обновленная мобильная версия
+   Таблица годового прогноза
    ========================================================================== */
-.yearly-table {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  overflow: hidden;
-}
-
-.yearly-header {
-  display: none;
-}
-
+.yearly-table { display: flex; flex-direction: column; gap: 6px; width: 100%; overflow: hidden; }
+.yearly-header { display: none; }
 .yearly-row {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 12px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 12px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  display: flex; flex-direction: column; gap: 6px;
 }
-
-.yearly-row:hover {
-  background: var(--card-2);
-  border-color: var(--accent);
-}
-
-.yearly-row-negative {
-  background: rgba(255, 92, 124, 0.08);
-  border-color: rgba(255, 92, 124, 0.3);
-}
-
-.yearly-row-negative:hover {
-  background: rgba(255, 92, 124, 0.15);
-}
-
-.yearly-row-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.yearly-month {
-  font-weight: 600;
-  text-transform: capitalize;
-  color: var(--text);
-  font-size: 15px;
-}
-
-.yearly-balance {
-  font-weight: 700;
-  font-size: 16px;
-}
-
-.yearly-row-bottom {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.yearly-income {
-  color: var(--green);
-}
-
-.yearly-expense {
-  color: var(--red);
-}
-
-.yearly-total-row {
-  margin-top: 8px;
-  background: var(--card-2);
-  border: 2px solid var(--accent);
-  font-weight: 700;
-  cursor: default;
-}
-
-.yearly-total-row:hover {
-  background: var(--card-2);
-  border-color: var(--accent);
-}
+.yearly-row:hover { background: var(--card-2); border-color: var(--accent); }
+.yearly-row-negative { background: rgba(255, 92, 124, 0.08); border-color: rgba(255, 92, 124, 0.3); }
+.yearly-row-negative:hover { background: rgba(255, 92, 124, 0.15); }
+.yearly-row-top { display: flex; justify-content: space-between; align-items: center; }
+.yearly-month { font-weight: 600; text-transform: capitalize; color: var(--text); font-size: 15px; }
+.yearly-balance { font-weight: 700; font-size: 16px; }
+.yearly-row-bottom { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.yearly-income { color: var(--green); }
+.yearly-expense { color: var(--red); }
+.yearly-total-row { margin-top: 8px; background: var(--card-2); border: 2px solid var(--accent); font-weight: 700; cursor: default; }
+.yearly-total-row:hover { background: var(--card-2); border-color: var(--accent); }
 
 /* ==========================================================================
    DANGER ZONE (Опасная зона)
    ========================================================================== */
-.danger-zone {
-  border: 2px solid var(--red);
-  background: rgba(255, 92, 124, 0.05);
-  border-radius: 16px;
-  padding: 20px;
-  margin-top: 24px;
-}
-.danger-zone h2 {
-  color: var(--red);
-  font-size: 16px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 8px;
-}
+.danger-zone { border: 2px solid var(--red); background: rgba(255, 92, 124, 0.05); border-radius: 16px; padding: 20px; margin-top: 24px; }
+.danger-zone h2 { color: var(--red); font-size: 16px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
 .danger-zone p { font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.5; }
-.btn-danger {
-  background: transparent;
-  border: 1px solid var(--red);
-  color: var(--red);
-  border-radius: 10px;
-  padding: 12px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  width: 100%;
-  margin-bottom: 8px;
-}
+.btn-danger { background: transparent; border: 1px solid var(--red); color: var(--red); border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; width: 100%; margin-bottom: 8px; }
 .btn-danger:hover { background: rgba(255, 92, 124, 0.1); }
-.btn-danger-solid {
-  background: var(--red);
-  border: 1px solid var(--red);
-  color: #fff;
-  border-radius: 10px;
-  padding: 12px 18px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-  width: 100%;
-}
+.btn-danger-solid { background: var(--red); border: 1px solid var(--red); color: #fff; border-radius: 10px; padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; width: 100%; }
 .btn-danger-solid:hover { background: #ff7d99; }
 .btn-danger-solid:disabled { opacity: 0.4; cursor: not-allowed; background: var(--red); }
 
@@ -377,26 +189,14 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
    MODAL (Модальные окна)
    ========================================================================== */
 .modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  display: none;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.7); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center; z-index: 1000;
   padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
 }
 .modal-overlay.active { display: flex; }
 .modal-content {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 24px;
-  max-width: 420px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 24px; max-width: 420px; width: 100%; max-height: 90vh; overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 .modal-content h3 { font-size: 18px; margin-bottom: 12px; color: var(--text); }
@@ -420,16 +220,7 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
    ========================================================================== */
 .category-group { margin-bottom: 20px; }
 .category-group-title { font-size: 13px; color: var(--muted); text-transform: uppercase; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px; }
-.category-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--card-2);
-  border-radius: 10px;
-  margin-bottom: 6px;
-  font-size: 14px;
-}
+.category-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; background: var(--card-2); border-radius: 10px; margin-bottom: 6px; font-size: 14px; }
 .category-item.archived { opacity: 0.5; }
 .category-item.archived .category-name { text-decoration: line-through; }
 .category-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
@@ -442,46 +233,11 @@ input[type="month"]::-webkit-datetime-edit { color: var(--text); }
 /* ==========================================================================
    SWIPE TO DELETE (Удаление свайпом)
    ========================================================================== */
-.swipe-wrapper {
-  position: relative;
-  overflow: hidden;
-  border-radius: 10px;
-}
-
-.swipe-item {
-  position: relative;
-  z-index: 2;
-  transition: transform 0.3s ease;
-  will-change: transform;
-}
-
-.swipe-action {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 100%;
-  width: 80px;
-  background: var(--red);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  z-index: 1;
-  border-radius: 0 10px 10px 0;
-  cursor: pointer;
-}
-
-.desktop-delete {
-  display: none;
-}
-
+.swipe-wrapper { position: relative; overflow: hidden; border-radius: 10px; }
+.swipe-item { position: relative; z-index: 2; transition: transform 0.3s ease; will-change: transform; }
+.swipe-action { position: absolute; top: 0; right: 0; height: 100%; width: 80px; background: var(--red); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; z-index: 1; border-radius: 0 10px 10px 0; cursor: pointer; }
+.desktop-delete { display: none; }
 @media (hover: hover) and (pointer: fine) {
-  .desktop-delete {
-    display: flex !important;
-  }
-  .swipe-action {
-    display: none;
-  }
+  .desktop-delete { display: flex !important; }
+  .swipe-action { display: none; }
 }
