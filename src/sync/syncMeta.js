@@ -1,7 +1,6 @@
 /* ==========================================================================
    syncMeta.js — служебные метаданные синхронизации в сторе syncMeta.
-   Хранит: lastSync (ISO-строка последней успешной синхронизации),
-   forceCloudReset (флаг «удалить все облачные данные пользователя»).
+   Хранит: lastSync, forceCloudReset, knownShares.
    ========================================================================== */
 import { getFromStore, putIntoStore } from '../infrastructure/database/transaction.js';
 
@@ -50,5 +49,19 @@ export async function clearOutbox(db) {
     req.onsuccess = resolve;
     req.onerror = () => reject(req.error);
   });
+  await awaitTx(tx);
+}
+
+// === НОВОЕ: Управление списком известных шарингов для Backfill ===
+export async function getKnownShares(db) {
+  const tx = db.transaction(['syncMeta'], 'readonly');
+  const row = await getFromStore('syncMeta', 'knownShares', tx);
+  await awaitTx(tx);
+  return row?.value || [];
+}
+
+export async function setKnownShares(db, sharesArray) {
+  const tx = db.transaction(['syncMeta'], 'readwrite');
+  await putIntoStore('syncMeta', { id: 'knownShares', value: sharesArray }, tx);
   await awaitTx(tx);
 }
