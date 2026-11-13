@@ -2,15 +2,22 @@
    Экран «Статистика».
    - Donut с центральной суммой, Bar Chart с сеткой.
    - Empty States для пустых графиков.
-   - v4.4.3: фильтрация по activeViewOwnerId (свои данные vs данные друга).
+   - v4.4.5: фильтрация по activeViewOwnerId + имя друга в баннере read-only.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { calculateGoalBalance, calculateTotalAccumulated, calculatePoolBalance } from '../../../domain/statistics/balances.js';
 import { calculateSavingsRate } from '../../../domain/statistics/savingsRate.js';
 import { getSupabaseClient } from '../../../supabaseClient.js';
 import { getActiveViewOwnerId, setActiveViewOwnerId } from '../../state.js';
+import { resolveOwnerNames } from '../../utils/ownerNames.js';
 
 const CATEGORY_COLORS = ['#D5E84A', '#789879', '#D4776D', '#D8A65A', '#8b91a3', '#A58BD4', '#6DB4D4'];
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 export async function renderStatisticsScreen(container, db) {
   const supabase = getSupabaseClient();
@@ -29,8 +36,6 @@ export async function renderStatisticsScreen(container, db) {
   const allCategoriesRaw = await getAllFromStore('categories', tx);
 
   // === Определяем, чьи данные показываем ===
-  // ownerIds строим по всем источникам, где есть _ownerId (на случай, если
-  // у друга нет целей, но есть транзакции).
   const ownerIdSet = new Set();
   const collect = (arr) => arr.forEach(x => { if (x._ownerId) ownerIdSet.add(x._ownerId); });
   collect(allGoalsRaw);
@@ -46,13 +51,18 @@ export async function renderStatisticsScreen(container, db) {
   }
   const isReadOnly = targetOwnerId !== myId;
 
+  let friendName = null;
+  if (isReadOnly) {
+    const names = await resolveOwnerNames(supabase, [targetOwnerId]);
+    friendName = names[targetOwnerId] || null;
+  }
+
   const goals = allGoalsRaw.filter(g => (g._ownerId || myId) === targetOwnerId);
   const moneyEntries = allMoneyEntriesRaw.filter(e => (e._ownerId || myId) === targetOwnerId);
   const actualContributions = allActualContributionsRaw.filter(c => (c._ownerId || myId) === targetOwnerId);
   const actualIncomes = allActualIncomesRaw.filter(i => (i._ownerId || myId) === targetOwnerId);
   const actualTransactions = allActualTransactionsRaw.filter(t => (t._ownerId || myId) === targetOwnerId);
   const categories = allCategoriesRaw.filter(c => (c._ownerId || myId) === targetOwnerId);
-  // ==========================================
 
   const activeGoals = goals.filter(g => g.status === 'active');
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
@@ -216,19 +226,25 @@ export async function renderStatisticsScreen(container, db) {
     </div>
   `;
 
-  // === Баннер «Только чтение» для чужих данных ===
-  const readOnlyBannerHtml = isReadOnly ? `
-    <section class="card" style="margin-bottom: 16px; padding: 12px 14px; border-color: var(--yellow); background: rgba(216,166,90,0.08);">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-        </svg>
-        <div style="font-size: 13px; font-weight: 600; color: var(--yellow); line-height: 1.4;">
-          Вы смотрите статистику друга. Только чтение.
+  // === Баннер «Только чтение» для чужих данных (с именем друга) ===
+  let readOnlyBannerHtml = '';
+  if (isReadOnly) {
+    const readOnlyText = friendName
+      ? `Вы смотрите статистику друга: ${escapeHtml(friendName)}. Только чтение.`
+      : 'Вы смотрите статистику друга. Только чтение.';
+    readOnlyBannerHtml = `
+      <section class="card" style="margin-bottom: 16px; padding: 12px 14px; border-color: var(--yellow); background: rgba(216,166,90,0.08);">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--yellow)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+          <div style="font-size: 13px; font-weight: 600; color: var(--yellow); line-height: 1.4;">
+            ${readOnlyText}
+          </div>
         </div>
-      </div>
-    </section>
-  ` : '';
+      </section>
+    `;
+  }
 
   let html = `
     ${readOnlyBannerHtml}
