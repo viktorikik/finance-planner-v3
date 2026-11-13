@@ -1,7 +1,7 @@
 /* ==========================================================================
    Экран «Бюджет». Управление доходами, расходами и фактом + Годовой прогноз
-   + Аналитика по категориям (из БД). Формы вынесены в модальные окна.
-   Выбор месяца вынесен в модальное окно для решения проблемы вылета.
+   + Аналитика по категориям. Формы вынесены в модальные окна.
+   + Поддержка режима «Только чтение» (совместный доступ).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -10,6 +10,8 @@ import { calculateYearlyBudget } from '../../../domain/budget/yearlyBudget.js';
 import { calculateBudgetExecution } from '../../../domain/budget/budgetExecution.js';
 import { calculateCategoryAnalytics } from '../../../domain/budget/categoryAnalytics.js';
 import { generateId } from '../../../domain/shared/ids.js';
+import { getSupabaseClient } from '../../../supabaseClient.js';
+import { getActiveViewOwnerId } from '../../state.js';
 
 const formatMoney = (minor) => (minor / 100).toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const formatCompactMoney = (minor) => {
@@ -28,10 +30,13 @@ function formatMonthTitle(ym) {
 const ICON_EDIT = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
 const ICON_HIDE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 const ICON_SHOW = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
-const ICON_DELETE = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
 const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
 
 export async function renderBudgetScreen(container, db) {
+  const supabase = getSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const myId = user?.id;
+
   const now = new Date();
   let currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   let isYearlyViewVisible = false;
@@ -42,20 +47,31 @@ export async function renderBudgetScreen(container, db) {
   async function render() {
     container.innerHTML = '<div class="loading">Загрузка бюджета...</div>';
 
-    let goals = [], plannedOperations = [], plannedTransactions = [], actualTransactions = [];
+    let goalsRaw = [], plannedOpsRaw = [], plannedTxRaw = [], actualTxRaw = [], catsRaw = [];
 
     try {
       const tx = db.transaction(['goals', 'plannedOperations', 'plannedTransactions', 'actualTransactions', 'categories'], 'readonly');
-      goals = await getAllFromStore('goals', tx);
-      plannedOperations = await getAllFromStore('plannedOperations', tx);
-      plannedTransactions = await getAllFromStore('plannedTransactions', tx);
-      actualTransactions = await getAllFromStore('actualTransactions', tx);
-      allCategories = await getAllFromStore('categories', tx);
+      goalsRaw = await getAllFromStore('goals', tx);
+      plannedOpsRaw = await getAllFromStore('plannedOperations', tx);
+      plannedTxRaw = await getAllFromStore('plannedTransactions', tx);
+      actualTxRaw = await getAllFromStore('actualTransactions', tx);
+      catsRaw = await getAllFromStore('categories', tx);
     } catch (err) {
       console.warn('[BudgetScreen] Ошибка загрузки:', err);
       container.innerHTML = `<div class="card"><p class="muted">Ошибка загрузки базы данных. Обновите страницу.</p></div>`;
       return;
     }
+
+    // === Определение контекста ===
+    let targetOwnerId = getActiveViewOwnerId() || myId;
+    const isReadOnly = targetOwnerId !== myId;
+
+    // === Фильтрация данных ===
+    const goals = goalsRaw.filter(g => (g._ownerId || myId) === targetOwnerId);
+    const plannedOperations = plannedOpsRaw.filter(op => (op._ownerId || myId) === targetOwnerId);
+    const plannedTransactions = plannedTxRaw.filter(t => (t._ownerId || myId) === targetOwnerId);
+    const actualTransactions = actualTxRaw.filter(t => (t._ownerId || myId) === targetOwnerId);
+    allCategories = catsRaw.filter(c => (c._ownerId || myId) === targetOwnerId);
 
     categoriesMeta = {};
     for (const cat of allCategories) {
@@ -196,6 +212,7 @@ export async function renderBudgetScreen(container, db) {
 
     container.innerHTML = `
       <h2 style="margin: 0 0 16px 0; font-size: 20px;">Бюджет</h2>
+      ${isReadOnly ? '<div style="background:var(--yellow); color:#000; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; font-weight:600; text-align:center;">🔒 Режим чтения</div>' : ''}
 
       <div class="card">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
@@ -207,6 +224,7 @@ export async function renderBudgetScreen(container, db) {
 
         ${summaryHtml}
 
+        ${!isReadOnly ? `
         <div class="actions-row" style="margin-bottom: 8px;">
           <button class="btn btn-outline" id="btn-add-income">+ План доход</button>
           <button class="btn btn-outline" id="btn-add-expense">+ План расход</button>
@@ -215,6 +233,7 @@ export async function renderBudgetScreen(container, db) {
           <button class="btn" id="btn-add-fact-income" style="background:var(--green); color:#000;">+ Факт доход</button>
           <button class="btn" id="btn-add-fact-expense" style="background:var(--red);">+ Факт расход</button>
         </div>
+        ` : ''}
 
         <button class="btn btn-text" id="btn-toggle-yearly" style="width: 100%; margin-top: 8px; border: 1px dashed var(--border); padding: 10px;">
           ${isYearlyViewVisible ? 'Скрыть прогноз на год' : '📅 Показать прогноз на 12 месяцев'}
@@ -226,14 +245,14 @@ export async function renderBudgetScreen(container, db) {
 
       <div class="card">
         <h2>Плановые операции</h2>
-        ${renderTransactionsList(plan.incomes, plan.inactiveIncomes, 'План: Доходы', 'income', factIncomes)}
-        ${renderTransactionsList(plan.expenses, plan.inactiveExpenses, 'План: Расходы', 'expense', factExpenses)}
+        ${renderTransactionsList(plan.incomes, plan.inactiveIncomes, 'План: Доходы', 'income', factIncomes, isReadOnly)}
+        ${renderTransactionsList(plan.expenses, plan.inactiveExpenses, 'План: Расходы', 'expense', factExpenses, isReadOnly)}
         ${(!plan.incomes.length && !plan.expenses.length) ? '<p class="muted">Нет плановых операций.</p>' : ''}
       </div>
 
       <div class="card">
         <h2>Фактические операции (без плана)</h2>
-        ${renderStandaloneFacts(factIncomes, factExpenses, activePlanIds)}
+        ${renderStandaloneFacts(factIncomes, factExpenses, activePlanIds, isReadOnly)}
       </div>
 
       <div class="modal-overlay" id="form-modal">
@@ -255,7 +274,7 @@ export async function renderBudgetScreen(container, db) {
       </div>
     `;
 
-    initSwipe(container);
+    initSwipe(container, isReadOnly);
 
     // Логика выбора месяца
     document.getElementById('btn-pick-month').addEventListener('click', () => {
@@ -266,13 +285,11 @@ export async function renderBudgetScreen(container, db) {
       const currentY = parseInt(currentMonth.split('-')[0], 10);
       const currentM = parseInt(currentMonth.split('-')[1], 10);
 
-      // Заполняем годы
       yearSelect.innerHTML = '';
       for (let y = now.getFullYear() - 2; y <= now.getFullYear() + 5; y++) {
         yearSelect.innerHTML += `<option value="${y}" ${y === currentY ? 'selected' : ''}>${y}</option>`;
       }
 
-      // Заполняем месяцы
       const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
       monthSelect.innerHTML = '';
       months.forEach((m, i) => {
@@ -307,44 +324,46 @@ export async function renderBudgetScreen(container, db) {
       });
     });
 
-    document.getElementById('btn-add-income').addEventListener('click', () => showPlannedForm('income'));
-    document.getElementById('btn-add-expense').addEventListener('click', () => showPlannedForm('expense'));
-    document.getElementById('btn-add-fact-income').addEventListener('click', () => showFactForm('income'));
-    document.getElementById('btn-add-fact-expense').addEventListener('click', () => showFactForm('expense'));
+    if (!isReadOnly) {
+      document.getElementById('btn-add-income').addEventListener('click', () => showPlannedForm('income'));
+      document.getElementById('btn-add-expense').addEventListener('click', () => showPlannedForm('expense'));
+      document.getElementById('btn-add-fact-income').addEventListener('click', () => showFactForm('income'));
+      document.getElementById('btn-add-fact-expense').addEventListener('click', () => showFactForm('expense'));
 
-    container.querySelectorAll('[data-action="add-fact-to-plan"]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const planId = btn.dataset.planId;
-        const allPlans = [...plan.incomes, ...plan.expenses];
-        const plannedTx = allPlans.find(t => t.id === planId);
-        if (plannedTx) showFactForm(plannedTx.type, plannedTx);
-      });
-    });
-
-    container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        const id = btn.dataset.id;
-        const isActive = btn.dataset.active === 'true';
-        await executeCommand(db, {
-          commandId: generateId(),
-          commandType: 'plannedTransaction.update',
-          payload: { id, isActive: !isActive }
+      container.querySelectorAll('[data-action="add-fact-to-plan"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const planId = btn.dataset.planId;
+          const allPlans = [...plan.incomes, ...plan.expenses];
+          const plannedTx = allPlans.find(t => t.id === planId);
+          if (plannedTx) showFactForm(plannedTx.type, plannedTx);
         });
-        render();
       });
-    });
 
-    container.querySelectorAll('[data-action="edit"]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const txId = btn.dataset.id;
-        const allTxs = [...plan.incomes, ...plan.expenses, ...plan.inactiveIncomes, ...plan.inactiveExpenses];
-        const tx = allTxs.find(t => t.id === txId);
-        if (tx) showPlannedForm(tx.type, tx);
+      container.querySelectorAll('[data-action="toggle"]').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const id = btn.dataset.id;
+          const isActive = btn.dataset.active === 'true';
+          await executeCommand(db, {
+            commandId: generateId(),
+            commandType: 'plannedTransaction.update',
+            payload: { id, isActive: !isActive }
+          });
+          render();
+        });
       });
-    });
+
+      container.querySelectorAll('[data-action="edit"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const txId = btn.dataset.id;
+          const allTxs = [...plan.incomes, ...plan.expenses, ...plan.inactiveIncomes, ...plan.inactiveExpenses];
+          const tx = allTxs.find(t => t.id === txId);
+          if (tx) showPlannedForm(tx.type, tx);
+        });
+      });
+    }
 
     document.getElementById('form-modal').addEventListener('click', (e) => {
       if (e.target.id === 'form-modal') {
@@ -353,7 +372,9 @@ export async function renderBudgetScreen(container, db) {
     });
   }
 
-  function initSwipe(container) {
+  function initSwipe(container, isReadOnly) {
+    if (isReadOnly) return; // Не включаем свайпы, если только чтение
+
     container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
       const item = wrapper.querySelector('.swipe-item');
       let startX = 0;
@@ -443,7 +464,7 @@ export async function renderBudgetScreen(container, db) {
     });
   }
 
-  function renderTransactionsList(activeItems, inactiveItems, title, type, allFactItems) {
+  function renderTransactionsList(activeItems, inactiveItems, title, type, allFactItems, isReadOnly) {
     const allItems = [...activeItems, ...inactiveItems];
     if (!allItems.length) return '';
 
@@ -459,7 +480,7 @@ export async function renderBudgetScreen(container, db) {
 
           return `
           <div class="swipe-wrapper" style="margin-bottom: 12px;">
-            <div class="swipe-action" data-type="plan" data-id="${tx.id}">Удалить</div>
+            ${!isReadOnly ? `<div class="swipe-action" data-type="plan" data-id="${tx.id}">Удалить</div>` : ''}
             <div class="event-item swipe-item" style="border-left-color: ${type === 'income' ? 'var(--green)' : 'var(--red)'}; opacity: ${isInactive ? '0.5' : '1'};">
               <div style="display:flex; justify-content:space-between; align-items:center;">
                 <div>
@@ -470,14 +491,16 @@ export async function renderBudgetScreen(container, db) {
                   ${linkedFacts.length > 0 ? `<div class="event-meta" style="color:var(--green)">Внесено факт: ${formatMoney(totalLinkedFact)} ₽</div>` : ''}
                 </div>
                 <div style="display:flex; flex-direction:column; gap:8px; align-items: flex-end;">
-                  <button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>
+                  ${!isReadOnly ? `<button class="btn btn-small btn-outline" data-action="add-fact-to-plan" data-plan-id="${tx.id}" style="padding: 6px 10px; font-size: 12px;">+ Факт</button>` : ''}
+                  
+                  ${!isReadOnly ? `
                   <div style="display:flex; gap:8px; align-items: center;">
                     <button class="btn-icon" data-action="edit" data-id="${tx.id}" title="Редактировать" style="color: var(--muted); display:flex; align-items:center; justify-content:center;">${ICON_EDIT}</button>
                     <button class="btn-icon" data-action="toggle" data-id="${tx.id}" data-active="${tx.isActive !== false}" title="${tx.isActive !== false ? 'Отключить' : 'Включить'}" style="display:flex; align-items:center; justify-content:center;">
                       ${tx.isActive !== false ? ICON_SHOW : ICON_HIDE}
                     </button>
                     <button class="btn-icon desktop-delete" data-type="plan" data-id="${tx.id}" title="Удалить" style="color: var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
-                  </div>
+                  </div>` : ''}
                 </div>
               </div>
 
@@ -488,7 +511,7 @@ export async function renderBudgetScreen(container, db) {
                       <span>Факт: ${new Date(f.actualDate).toLocaleDateString('ru-RU')}</span>
                       <span style="display:flex; gap:8px; align-items:center;">
                         <b style="color:var(--text)">${formatMoney(f.amountMinor)} ₽</b>
-                        <button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
+                        ${!isReadOnly ? `<button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>` : ''}
                       </span>
                     </div>
                   `).join('')}
@@ -501,13 +524,13 @@ export async function renderBudgetScreen(container, db) {
     `;
   }
 
-  function renderStandaloneFacts(factsIn, factsEx, activePlanIds) {
+  function renderStandaloneFacts(factsIn, factsEx, activePlanIds, isReadOnly) {
     const standalone = [...factsIn, ...factsEx].filter(f => !f.plannedTransactionId || !activePlanIds.has(f.plannedTransactionId));
     if (!standalone.length) return '<p class="muted">Нет внеплановых фактов.</p>';
 
     return standalone.map(f => `
       <div class="swipe-wrapper" style="margin-bottom: 8px;">
-        <div class="swipe-action" data-type="fact" data-id="${f.id}">Удалить</div>
+        ${!isReadOnly ? `<div class="swipe-action" data-type="fact" data-id="${f.id}">Удалить</div>` : ''}
         <div class="event-item swipe-item" style="border-left-color: ${f.type === 'income' ? 'var(--green)' : 'var(--red)'};">
           <div style="display:flex; justify-content:space-between; align-items:center;">
             <div>
@@ -516,7 +539,7 @@ export async function renderBudgetScreen(container, db) {
             </div>
             <div style="display:flex; gap:8px; align-items:center;">
               <b style="color:${f.type === 'income' ? 'var(--green)' : 'var(--red)'}">${formatMoney(f.amountMinor)} ₽</b>
-              <button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>
+              ${!isReadOnly ? `<button class="btn-icon desktop-delete" data-type="fact" data-id="${f.id}" style="color:var(--red); display:flex; align-items:center; justify-content:center;">${ICON_TRASH}</button>` : ''}
             </div>
           </div>
         </div>
@@ -531,6 +554,7 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function showPlannedForm(type, existingTx = null) {
+    // ... (остается без изменений, так как вызывается только если не ReadOnly)
     const modal = document.getElementById('form-modal');
     const content = document.getElementById('form-modal-content');
     const isIncome = type === 'income';
@@ -641,6 +665,7 @@ export async function renderBudgetScreen(container, db) {
   }
 
   function showFactForm(type, plannedTx = null) {
+    // ... (остается без изменений, так как вызывается только если не ReadOnly)
     const modal = document.getElementById('form-modal');
     const content = document.getElementById('form-modal-content');
     const isIncome = type === 'income';
