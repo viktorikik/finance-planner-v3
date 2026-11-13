@@ -1,8 +1,9 @@
 /* ==========================================================================
    Экран «План».
-   - Карточки целей по умолчанию СВЁРНУТЫ (логика через expandedGoals).
+   - Карточки целей по умолчанию СВЁРНУТЫ.
    - Добавлен свайп влево для удаления цели.
-   - Убран визуальный шум (эмодзи из кнопок и заголовков).
+   - Убран визуальный шум (эмодзи).
+   - НОВОЕ: Добавлен список доходов месяца с возможностью удаления.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -14,19 +15,21 @@ import { renderBudgetWidget } from '../../widgets/BudgetWidget.js';
 import { getSupabaseClient } from '../../../supabaseClient.js';
 import { getActiveViewOwnerId, setActiveViewOwnerId } from '../../state.js';
 
-const expandedGoals = new Set(); // ИЗМЕНЕНО: теперь храним открытые, а не закрытые
+const expandedGoals = new Set();
 const expandedPlans = new Set();
 let currentFilter = 'all';
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
 let openSettingsGoalId = null;
 let openTransferGoalId = null;
 let isPoolTransferOpen = false;
+let isIncomesListOpen = false; // НОВОЕ: раскрыт ли список доходов
 const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 const ICON_EDIT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
 const ICON_SETTINGS = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
+const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
 
 function buildSchedule(balance, futureOps, annualRate) {
   let currentBalance = balance;
@@ -94,9 +97,12 @@ export async function renderPlanScreen(container, db) {
   
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
   
-  const currentMonthIncomes = actualIncomes
+  // ДОХОДЫ ТЕКУЩЕГО МЕСЯЦА
+  const currentMonthIncomesList = actualIncomes
     .filter(inc => inc.actualDate.startsWith(currentMonth))
-    .reduce((sum, inc) => sum + inc.amountMinor, 0);
+    .sort((a, b) => new Date(b.actualDate) - new Date(a.actualDate));
+  
+  const currentMonthIncomes = currentMonthIncomesList.reduce((sum, inc) => sum + inc.amountMinor, 0);
 
   let filteredGoals = activeGoals;
   if (currentFilter === 'short') filteredGoals = activeGoals.filter(g => g.category === 'short');
@@ -112,6 +118,11 @@ export async function renderPlanScreen(container, db) {
     .filter(c => c.type === 'income' && !c.isArchived)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  const categoriesMeta = {};
+  for (const cat of allCategories) {
+    categoriesMeta[cat.id] = { name: cat.name, emoji: cat.emoji };
+  }
+
   let switcherHtml = '';
   if (otherOwners.length > 0) {
     switcherHtml = `
@@ -123,6 +134,41 @@ export async function renderPlanScreen(container, db) {
         </select>
         ${isReadOnly ? '<div style="color: var(--yellow); font-size: 12px; margin-top: 8px; font-weight: 600;">Режим чтения. Вы видите данные, которыми с вами поделились.</div>' : ''}
       </section>
+    `;
+  }
+
+  // СПИСОК ДОХОДОВ МЕСЯЦА (раскрывающийся)
+  let incomesListHtml = '';
+  if (currentMonthIncomesList.length > 0) {
+    incomesListHtml = `
+      <div style="margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <button type="button" id="toggle-incomes-list" style="background: none; border: none; padding: 0; color: var(--muted); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+            ${isIncomesListOpen ? 'Скрыть детализацию' : `Показать все доходы (${currentMonthIncomesList.length})`}
+          </button>
+          ${!isReadOnly ? `<button type="button" id="clear-incomes-btn" style="background: none; border: none; color: var(--red); font-size: 12px; cursor: pointer; font-weight: 600;">Очистить</button>` : ''}
+        </div>
+        <div id="incomes-list-details" style="display: ${isIncomesListOpen ? 'block' : 'none'};">
+          ${currentMonthIncomesList.map(inc => {
+            const cat = categoriesMeta[inc.category] || { name: 'Без категории', emoji: '' };
+            return `
+              <div class="swipe-wrapper-income" style="position: relative; overflow: hidden; border-radius: 8px; margin-bottom: 6px;">
+                ${!isReadOnly ? `<div class="swipe-action-income" data-income-id="${inc.id}" style="position: absolute; right: 0; top: 0; bottom: 0; width: 80px; background: var(--red); color: white; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; cursor: pointer;">Удалить</div>` : ''}
+                <div class="swipe-item-income" style="position: relative; background: var(--card-2); transition: transform 0.3s ease; padding: 10px 12px; display: flex; justify-content: space-between; align-items: center; border-radius: 8px;">
+                  <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+                    <span style="font-size: 13px; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${cat.emoji || ''} ${cat.name}</span>
+                    <span style="font-size: 11px; color: var(--muted);">${new Date(inc.actualDate).toLocaleDateString('ru-RU')}</span>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">
+                    <span style="font-weight: 700; color: var(--green); font-size: 14px;" class="${isAmountHidden ? 'blurred' : ''}">+${formatRub(inc.amountMinor)} ₽</span>
+                    ${!isReadOnly ? `<button type="button" class="income-desktop-delete" data-income-id="${inc.id}" style="background: none; border: none; color: var(--red); cursor: pointer; padding: 4px; display: flex; align-items: center;">${ICON_TRASH}</button>` : ''}
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
     `;
   }
 
@@ -152,6 +198,7 @@ export async function renderPlanScreen(container, db) {
         </select>
         <button type="submit" class="btn btn-small" style="flex-shrink: 0;">+</button>
       </form>
+      ${incomesListHtml}
     </section>
     ` : ''}
 
@@ -469,7 +516,6 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
-      // ОБЕРТКА ДЛЯ СВАЙПА
       html += `
         <div class="swipe-wrapper" style="margin-bottom: 12px; position: relative; overflow: hidden; border-radius: 12px;">
           ${!isReadOnly ? `<div class="swipe-action" data-goal-id="${goal.id}" style="position: absolute; right: 0; top: 0; bottom: 0; width: 80px; background: var(--red); color: white; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; cursor: pointer;">Удалить</div>` : ''}
@@ -569,8 +615,8 @@ export async function renderPlanScreen(container, db) {
 
   container.innerHTML = html;
 
-  // Инициализация свайпов для целей
-  initSwipe(container, isReadOnly);
+  initGoalSwipe(container, isReadOnly);
+  initIncomeSwipe(container, isReadOnly);
 
   const switcher = document.getElementById('owner-switcher');
   if (switcher) {
@@ -592,6 +638,28 @@ export async function renderPlanScreen(container, db) {
       localStorage.setItem('hideAmounts', isAmountHidden);
     }
     renderPlanScreen(container, db);
+  });
+
+  // === НОВОЕ: Управление списком доходов ===
+  document.getElementById('toggle-incomes-list')?.addEventListener('click', () => {
+    isIncomesListOpen = !isIncomesListOpen;
+    renderPlanScreen(container, db);
+  });
+
+  document.getElementById('clear-incomes-btn')?.addEventListener('click', async () => {
+    if (!confirm(`Удалить ВСЕ доходы за ${new Date().toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}?`)) return;
+    try {
+      for (const inc of currentMonthIncomesList) {
+        await executeCommand(db, {
+          commandId: generateId(),
+          commandType: 'actualIncome.delete',
+          payload: { id: inc.id }
+        });
+      }
+      await renderPlanScreen(container, db);
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    }
   });
 
   const toggleAdvBtn = document.getElementById('toggle-advanced-create');
@@ -981,7 +1049,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // Универсальная функция удаления цели (используется и для кнопки, и для свайпа)
   async function handleGoalDelete(goalId) {
     const goal = activeGoals.find(g => g.id === goalId);
     const balance = calculateGoalBalance(goalId, moneyEntries);
@@ -1005,8 +1072,25 @@ export async function renderPlanScreen(container, db) {
     btn.addEventListener('click', () => handleGoalDelete(btn.dataset.goalId));
   });
 
-  // Инициализация свайпов
-  function initSwipe(container, isReadOnly) {
+  async function handleIncomeDelete(incomeId) {
+    if (!confirm('Удалить этот доход?')) return;
+    try {
+      await executeCommand(db, {
+        commandId: generateId(),
+        commandType: 'actualIncome.delete',
+        payload: { id: incomeId }
+      });
+      await renderPlanScreen(container, db);
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    }
+  }
+
+  container.querySelectorAll('.income-desktop-delete').forEach(btn => {
+    btn.addEventListener('click', () => handleIncomeDelete(btn.dataset.incomeId));
+  });
+
+  function initGoalSwipe(container, isReadOnly) {
     if (isReadOnly) return;
 
     container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
@@ -1023,6 +1107,72 @@ export async function renderPlanScreen(container, db) {
         deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           await handleGoalDelete(deleteBtn.dataset.goalId);
+        });
+      }
+
+      item.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+        item.style.transition = 'none';
+      }, { passive: true });
+
+      item.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const deltaX = e.touches[0].clientX - startX;
+        
+        if (deltaX > 0 && !isOpen) {
+          currentX = 0;
+        } else if (deltaX < 0 && isOpen) {
+          currentX = Math.max(openDistance + deltaX, openDistance);
+        } else {
+          currentX = Math.min(0, deltaX);
+        }
+        item.style.transform = `translateX(${currentX}px)`;
+      }, { passive: true });
+
+      item.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        item.style.transition = 'transform 0.3s ease';
+        
+        if (currentX < -threshold) {
+          item.style.transform = `translateX(${openDistance}px)`;
+          isOpen = true;
+          currentX = openDistance;
+        } else {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target) && isOpen) {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+    });
+  }
+
+  function initIncomeSwipe(container, isReadOnly) {
+    if (isReadOnly) return;
+
+    container.querySelectorAll('.swipe-wrapper-income').forEach(wrapper => {
+      const item = wrapper.querySelector('.swipe-item-income');
+      let startX = 0;
+      let currentX = 0;
+      let isDragging = false;
+      let isOpen = false;
+      const threshold = 40;
+      const openDistance = -80;
+
+      const deleteBtn = wrapper.querySelector('.swipe-action-income');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await handleIncomeDelete(deleteBtn.dataset.incomeId);
         });
       }
 
