@@ -149,7 +149,7 @@ export async function renderPlanScreen(container, db) {
       <section class="greeting-card">
         <div class="greeting-title">${timeWord}, ${escapeHtml(myName)}! 👋</div>
         <p class="greeting-text">
-          Личный финансовый планировщик: сколько денег действительно доступно,
+          Я твой личный финансовый планировщик. Здесь вся информация о твоих финансах: сколько денег доступно,
           какие цели достижимы и как сегодняшние решения повлияют на будущее.
         </p>
         <p class="greeting-motivation">${motivation}</p>
