@@ -74,7 +74,7 @@ export async function renderShareSection(anchor) {
         <input type="email" id="share-email-input" placeholder="Email пользователя" autocomplete="email">
       </div>
       <button class="btn" id="btn-share-submit" style="width: 100%; margin-bottom: 8px;">
-        ✉️ Пригласить по Email
+        Пригласить по Email
       </button>
       <div id="share-error" class="auth-error" style="display: none; margin-top: 8px;"></div>
 
@@ -132,7 +132,7 @@ export async function renderShareSection(anchor) {
       errorBox.textContent = msg;
       errorBox.style.display = 'block';
       btn.disabled = false;
-      btn.textContent = '✉️ Пригласить по Email';
+      btn.textContent = 'Пригласить по Email';
     }
   });
 
