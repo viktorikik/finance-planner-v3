@@ -3,6 +3,7 @@
    - Современный дизайн (аккордеоны, минимум эмодзи, чистые формы).
    - Добавлен экспорт в CSV, HTML и PDF (через Print).
    - Добавлено редактирование профиля (display_name).
+   - Добавлено переключение темы (Светлая / Тёмная / Системная).
    ========================================================================== */
 import { generateBackup, restoreBackup } from '../../../infrastructure/backup/exportBackup.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -49,6 +50,9 @@ export async function renderSettingsScreen(container, db) {
     
     const displayNameValue = userProfile?.display_name || '';
     const userEmail = (await supabase.auth.getUser()).data.user?.email || '';
+    
+    // Получаем текущую тему (сохранена в localStorage)
+    const currentTheme = localStorage.getItem('appTheme') || 'system';
 
     const expenseCats = categories.filter(c => c.type === 'expense').sort((a, b) => a.sortOrder - b.sortOrder);
     const incomeCats = categories.filter(c => c.type === 'income').sort((a, b) => a.sortOrder - b.sortOrder);
@@ -59,23 +63,31 @@ export async function renderSettingsScreen(container, db) {
         <summary>Профиль и Общие настройки</summary>
         <div class="accordion-content">
           
-          <div style="background: var(--card-2); padding: 16px; border-radius: 12px; margin-bottom: 16px;">
-            <h4 style="margin-top:0; margin-bottom: 12px;">Ваш профиль</h4>
-            <div class="form-group" style="margin-bottom: 8px;">
+          <div style="background: var(--card-2); padding: 16px; border-radius: var(--radius-md); margin-bottom: 20px;">
+            <h4 style="margin-top:0; margin-bottom: 12px; font-size: 15px; color: var(--text);">Ваш профиль</h4>
+            <div class="form-group" style="margin-bottom: 12px;">
               <label>Как вас зовут?</label>
               <p style="font-size:12px; color:var(--muted); margin-bottom:8px;">Это имя увидят те, с кем вы поделитесь доступом.</p>
               <input type="text" id="profile-name-input" value="${displayNameValue}" placeholder="Например: Иван" maxlength="30">
             </div>
-            <div class="form-group">
-              <label>Ваш Email (для входа)</label>
-              <input type="email" value="${userEmail}" disabled style="opacity: 0.5;">
-            </div>
             <button class="btn btn-small" id="btn-save-profile" style="width: 100%;">Сохранить профиль</button>
           </div>
 
+          <div class="form-group" style="margin-bottom: 20px;">
+            <label>Оформление</label>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:8px;">Выберите тему интерфейса.</p>
+            <select id="theme-select">
+              <option value="system" ${currentTheme === 'system' ? 'selected' : ''}>Системная</option>
+              <option value="light" ${currentTheme === 'light' ? 'selected' : ''}>Светлая</option>
+              <option value="dark" ${currentTheme === 'dark' ? 'selected' : ''}>Тёмная</option>
+            </select>
+          </div>
+
+          <div style="border-top: 1px solid var(--border); margin: 16px 0;"></div>
+
           <div class="form-group">
             <label>Общая инфляция (%, в год)</label>
-            <p style="font-size:12px; color:var(--muted); margin-bottom:12px;">Используется для расчета долгосрочных целей.</p>
+            <p style="font-size:12px; color:var(--muted); margin-bottom:8px;">Используется для расчета долгосрочных целей.</p>
             <input type="number" id="inflation-input" value="${inflationValue}" min="0" max="100" step="0.1">
           </div>
           <button class="btn" id="btn-save-inflation" style="width: 100%;">Сохранить инфляцию</button>
@@ -113,7 +125,7 @@ export async function renderSettingsScreen(container, db) {
           </p>
 
           <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
-            <button id="btn-export-html" class="btn" style="background: var(--accent); color: #fff;">
+            <button id="btn-export-html" class="btn" style="background: var(--accent); color: var(--accent-ink);">
               Красивый отчет (HTML)
             </button>
             <div style="display: flex; gap: 8px;">
@@ -129,7 +141,7 @@ export async function renderSettingsScreen(container, db) {
           <div style="border-top: 1px solid var(--border); margin: 16px 0;"></div>
 
           <div style="display: flex; flex-direction: column; gap: 12px;">
-            <button id="btn-export" class="btn" style="background: var(--green); color: #000;">
+            <button id="btn-export" class="btn" style="background: var(--green); color: #fff;">
               Скачать файл бэкапа (JSON)
             </button>
 
@@ -171,7 +183,7 @@ export async function renderSettingsScreen(container, db) {
 
       <!-- ПОДВАЛ -->
       <section class="card" style="opacity: 0.6; text-align: center; font-size: 12px; padding: 16px; border: none;">
-        <div>Планировщик финансов v4.0</div>
+        <div>Мои финансы v4.3</div>
         <div>Schema v14 · Sync v1</div>
       </section>
 
@@ -209,6 +221,19 @@ export async function renderSettingsScreen(container, db) {
         alert('Ошибка: ' + err.message);
         btn.textContent = 'Сохранить профиль'; btn.disabled = false;
       }
+    });
+
+    // Обработчик смены темы
+    document.getElementById('theme-select').addEventListener('change', (e) => {
+      const theme = e.target.value;
+      localStorage.setItem('appTheme', theme);
+      
+      const root = document.documentElement;
+      root.classList.remove('theme-light', 'theme-dark');
+      
+      if (theme === 'light') root.classList.add('theme-light');
+      else if (theme === 'dark') root.classList.add('theme-dark');
+      // Если 'system' - классы не добавляем, сработает медиа-запрос
     });
 
     document.getElementById('btn-save-inflation').addEventListener('click', async (e) => {
@@ -255,15 +280,15 @@ export async function renderSettingsScreen(container, db) {
           <meta charset="UTF-8">
           <title>Финансовый отчет</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: #333; line-height: 1.5; padding: 40px; max-width: 800px; margin: 0 auto; }
-            h1 { color: #111; border-bottom: 2px solid #7c5cff; padding-bottom: 10px; }
+            body { font-family: 'Manrope', -apple-system, BlinkMacSystemFont, sans-serif; background: #fff; color: #333; line-height: 1.5; padding: 40px; max-width: 800px; margin: 0 auto; }
+            h1 { color: #111; border-bottom: 2px solid #D5E84A; padding-bottom: 10px; }
             h2 { color: #444; margin-top: 30px; }
             .summary { display: flex; gap: 20px; margin-bottom: 30px; }
             .box { flex: 1; background: #f5f5f5; padding: 20px; border-radius: 8px; text-align: center; }
             .box h3 { margin: 0 0 10px 0; font-size: 14px; color: #666; text-transform: uppercase; }
             .box .val { font-size: 24px; font-weight: bold; }
-            .income .val { color: #2e7d32; }
-            .expense .val { color: #c62828; }
+            .income .val { color: #789879; }
+            .expense .val { color: #D4776D; }
             table { width: 100%; border-collapse: collapse; margin-top: 20px; }
             th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
             th { background: #f9f9f9; font-weight: bold; }
@@ -290,7 +315,7 @@ export async function renderSettingsScreen(container, db) {
             </div>
             <div class="box">
               <h3>Остаток</h3>
-              <div class="val" style="color: ${totalIncomes - totalExpenses >= 0 ? '#2e7d32' : '#c62828'}">
+              <div class="val" style="color: ${totalIncomes - totalExpenses >= 0 ? '#789879' : '#D4776D'}">
                 ${formatRub(totalIncomes - totalExpenses)} ₽
               </div>
             </div>
@@ -322,9 +347,9 @@ export async function renderSettingsScreen(container, db) {
               ${actualTransactions.sort((a,b) => new Date(b.actualDate) - new Date(a.actualDate)).slice(0, 50).map(t => `
                 <tr>
                   <td>${new Date(t.actualDate).toLocaleDateString('ru-RU')}</td>
-                  <td style="color: ${t.type === 'income' ? '#2e7d32' : '#c62828'}">${t.type === 'income' ? 'Доход' : 'Расход'}</td>
+                  <td style="color: ${t.type === 'income' ? '#789879' : '#D4776D'}">${t.type === 'income' ? 'Доход' : 'Расход'}</td>
                   <td>${t.title}</td>
-                  <td style="text-align: right; font-weight: bold; color: ${t.type === 'income' ? '#2e7d32' : '#c62828'}">
+                  <td style="text-align: right; font-weight: bold; color: ${t.type === 'income' ? '#789879' : '#D4776D'}">
                     ${t.type === 'income' ? '+' : '-'}${formatRub(t.amountMinor)} ₽
                   </td>
                 </tr>
@@ -492,7 +517,7 @@ export async function renderSettingsScreen(container, db) {
     content.innerHTML = `
       <h3 style="color:var(--red);">${title}</h3>
       <p>Это действие <b>необратимо</b>. Будут удалены:</p>
-      <div class="counts-list" style="background:rgba(255,92,124,0.1);">
+      <div class="counts-list" style="background:rgba(212, 119, 109, 0.1);">
         <div><span>Целей</span><b>${counts.goalsCount}</b></div>
         <div><span>Плановых транзакций</span><b>${counts.plannedCount}</b></div>
         <div><span>Фактических транзакций</span><b>${counts.actualCount}</b></div>
