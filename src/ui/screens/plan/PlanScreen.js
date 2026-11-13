@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   - Поддержка совместного доступа (переключатель и read-only режим).
+   - Карточки целей по умолчанию СВЁРНУТЫ (логика через expandedGoals).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -12,7 +12,7 @@ import { renderBudgetWidget } from '../../widgets/BudgetWidget.js';
 import { getSupabaseClient } from '../../../supabaseClient.js';
 import { getActiveViewOwnerId, setActiveViewOwnerId } from '../../state.js';
 
-const collapsedGoals = new Set();
+const expandedGoals = new Set(); // ИЗМЕНЕНО: теперь храним открытые, а не закрытые
 const expandedPlans = new Set();
 let currentFilter = 'all';
 let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem('hideAmounts') === 'true' : false;
@@ -64,7 +64,6 @@ export async function renderPlanScreen(container, db) {
     req.onerror = () => resolve(null);
   });
 
-  // === Определение контекста (Свои данные / Данные друга) ===
   const ownerIds = new Set(allGoalsRaw.map(g => g._ownerId || myId));
   const otherOwners = [...ownerIds].filter(id => id !== myId);
 
@@ -75,7 +74,6 @@ export async function renderPlanScreen(container, db) {
   }
   const isReadOnly = targetOwnerId !== myId;
 
-  // === Фильтрация данных ===
   const goals = allGoalsRaw.filter(g => (g._ownerId || myId) === targetOwnerId);
   const moneyEntries = allMoneyEntriesRaw.filter(e => (e._ownerId || myId) === targetOwnerId);
   const allPlannedOps = allPlannedOpsRaw.filter(op => (op._ownerId || myId) === targetOwnerId);
@@ -111,7 +109,6 @@ export async function renderPlanScreen(container, db) {
     .filter(c => c.type === 'income' && !c.isArchived)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // === Переключатель контекста ===
   let switcherHtml = '';
   if (otherOwners.length > 0) {
     switcherHtml = `
@@ -245,7 +242,8 @@ export async function renderPlanScreen(container, db) {
         .filter(op => op.goalId === goal.id && op.state === 'scheduled' && op.plannedMonth)
         .sort((a, b) => (a.plannedMonth || '').localeCompare(b.plannedMonth || ''));
 
-      const isExpanded = !collapsedGoals.has(goal.id);
+      // ИЗМЕНЕНО: Теперь по умолчанию false, открываем только если есть в expandedGoals
+      const isExpanded = expandedGoals.has(goal.id);
       const isPlansExpanded = expandedPlans.has(goal.id);
       const isSettingsOpen = openSettingsGoalId === goal.id;
       const isTransferOpen = openTransferGoalId === goal.id;
@@ -329,7 +327,6 @@ export async function renderPlanScreen(container, db) {
 
       let settingsHtml = '';
       if (isSettingsOpen && !isReadOnly) {
-        // ... (код настроек цели остается прежним, но мы добавили проверку !isReadOnly)
         settingsHtml = `
           <form class="goal-settings-form" data-goal-id="${goal.id}">
             <div class="settings-section">
@@ -564,7 +561,6 @@ export async function renderPlanScreen(container, db) {
 
   container.innerHTML = html;
 
-  // --- Обработчик переключателя ---
   const switcher = document.getElementById('owner-switcher');
   if (switcher) {
     switcher.addEventListener('change', (e) => {
@@ -711,8 +707,9 @@ export async function renderPlanScreen(container, db) {
   container.querySelectorAll('[data-action="toggle-collapse"]').forEach(el => {
     el.addEventListener('click', () => {
       const goalId = el.dataset.goalId;
-      if (collapsedGoals.has(goalId)) collapsedGoals.delete(goalId);
-      else collapsedGoals.add(goalId);
+      // ИЗМЕНЕНО: Логика для expandedGoals
+      if (expandedGoals.has(goalId)) expandedGoals.delete(goalId);
+      else expandedGoals.add(goalId);
       renderPlanScreen(container, db);
     });
   });
