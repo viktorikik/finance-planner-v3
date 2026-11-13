@@ -3,6 +3,7 @@
    + Аналитика по категориям. Формы вынесены в модальные окна.
    + Поддержка режима «Только чтение» (совместный доступ).
    + Добавлены стрелочки для переключения месяцев.
+   + Расширен список годов для выбора месяца.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -308,7 +309,8 @@ export async function renderBudgetScreen(container, db) {
       const currentM = parseInt(currentMonth.split('-')[1], 10);
 
       yearSelect.innerHTML = '';
-      for (let y = now.getFullYear() - 2; y <= now.getFullYear() + 5; y++) {
+      // ИЗМЕНЕНО: теперь диапазон от -5 до +20 лет от текущего года
+      for (let y = now.getFullYear() - 5; y <= now.getFullYear() + 20; y++) {
         yearSelect.innerHTML += `<option value="${y}" ${y === currentY ? 'selected' : ''}>${y}</option>`;
       }
 
