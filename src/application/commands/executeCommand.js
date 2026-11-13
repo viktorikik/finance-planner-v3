@@ -160,16 +160,61 @@ export async function executeCommand(db, command) {
         plan = planPlannedOperationCreate(payload);
         break;
 
-      case 'plannedOperation.update':
+      case 'plannedOperation.update': {
         const opToUpdate = await getFromStore('plannedOperations', payload.operationId, tx);
         if (!opToUpdate) throw new Error('Операция не найдена');
-        const updatedOp = {
-          ...opToUpdate,
-          plannedAmountMinor: Math.round(payload.plannedAmountMinor),
-          updatedAt: new Date().toISOString()
-        };
+        
+        const newAmount = Math.round(payload.plannedAmountMinor);
+        const updatedOp = { ...opToUpdate, plannedAmountMinor: newAmount, updatedAt: new Date().toISOString() };
         plan.newPlannedOperations.push(updatedOp);
+        
+        if (payload.recalculateRest) {
+          const goal = await getFromStore('goals', opToUpdate.goalId, tx);
+          if (goal && goal.deadlineMonth) {
+            const allOps = await getAllFromStore('plannedOperations', tx);
+            const goalOps = allOps.filter(o => o.goalId === goal.id && o.state === 'scheduled');
+            
+            const futureOps = goalOps.filter(o => o.plannedMonth > opToUpdate.plannedMonth);
+            
+            if (futureOps.length > 0) {
+              const allEntries = await getAllFromStore('moneyEntries', tx);
+              const currentBalance = calculateGoalBalance(goal.id, allEntries);
+              
+              const pastOps = goalOps.filter(o => o.plannedMonth <= opToUpdate.plannedMonth);
+              const pastSum = pastOps.reduce((sum, o) => sum + (o.id === opToUpdate.id ? newAmount : o.plannedAmountMinor), 0);
+              
+              const simulatedBalance = currentBalance + pastSum;
+              
+              const nextMonthDate = new Date(opToUpdate.plannedMonth + '-01');
+              nextMonthDate.setMonth(nextMonthDate.getMonth() + 1);
+              const nextMonthStr = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, '0')}`;
+              
+              if (nextMonthStr <= goal.deadlineMonth) {
+                const settingsReq = tx.objectStore('settings').get('generalInflationRate');
+                const generalInflationSetting = await new Promise((resolve) => {
+                   settingsReq.onsuccess = () => resolve(settingsReq.result ? settingsReq.result.value : 5);
+                   settingsReq.onerror = () => resolve(5);
+                });
+                
+                const tempGoal = { ...goal, startMonth: nextMonthStr };
+                const newPlan = generatePlanForGoal(tempGoal, simulatedBalance, nextMonthStr, generalInflationSetting);
+                
+                for (const op of futureOps) {
+                  await new Promise((resolve, reject) => {
+                    const req = tx.objectStore('plannedOperations').delete(op.id);
+                    req.onsuccess = resolve; req.onerror = () => reject(req.error);
+                  });
+                }
+                
+                if (newPlan.newPlannedOperations) {
+                  plan.newPlannedOperations.push(...newPlan.newPlannedOperations);
+                }
+              }
+            }
+          }
+        }
         break;
+      }
       
       case 'plannedOperation.generate':
         const goalForGen = await getFromStore('goals', payload.goalId, tx);
