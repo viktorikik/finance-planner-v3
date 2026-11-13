@@ -1,9 +1,7 @@
 /* ==========================================================================
    entitySync.js — единая точка «sync-aware» записи/удаления.
-   Оборачивает put/delete для синхронизируемых сторов:
-   - проставляет _syncUpdatedAt и _fieldVersions (только реально изменённые поля);
-   - пишет метку в syncOutbox (upsert/delete);
-   - для не-синхронизируемых сторов работает как обычный put.
+   ВАЖНО: внутри транзакции IndexedDB избегаем лишних await между операциями,
+   иначе Safari/iPhone закрывает транзакцию (TransactionInactiveError).
    ========================================================================== */
 import { requestToPromise } from '../infrastructure/database/transaction.js';
 import { generateId } from '../domain/shared/ids.js';
@@ -15,7 +13,6 @@ export function isSyncable(storeName) {
   return SYNCABLE.has(storeName);
 }
 
-/** Глубокое сравнение значений полей (через JSON-сериализацию). */
 function deepEqual(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return a === b;
@@ -27,10 +24,6 @@ function deepEqual(a, b) {
   }
 }
 
-/**
- * Возвращает копию записи с обновлёнными _syncUpdatedAt и _fieldVersions.
- * Если ничего не изменилось и previousRecord есть — _syncUpdatedAt не трогается.
- */
 export function stampSyncFields(record, previousRecord) {
   const now = new Date().toISOString();
   const prevFV = previousRecord?._fieldVersions || {};
@@ -54,23 +47,18 @@ export function stampSyncFields(record, previousRecord) {
   };
 }
 
-/** Пишет метку в syncOutbox (одна запись на одно изменение). */
-export async function recordOutbox(tx, storeName, entityId, operation) {
-  const store = tx.objectStore('syncOutbox');
-  const entry = {
+/** Синхронно пишет метку в syncOutbox (без await). */
+function recordOutboxSync(tx, storeName, entityId, operation) {
+  const outboxStore = tx.objectStore('syncOutbox');
+  outboxStore.put({
     id: generateId(),
     storeName,
     entityId,
-    operation, // 'upsert' | 'delete'
+    operation,
     createdAt: new Date().toISOString()
-  };
-  return requestToPromise(store.put(entry));
+  });
 }
 
-/**
- * Сохраняет запись с обновлением sync-полей и записью в outbox.
- * Возвращает сохранённый (stamped) объект.
- */
 export async function saveWithSync(tx, storeName, record) {
   if (!SYNCABLE.has(storeName)) {
     return requestToPromise(tx.objectStore(storeName).put(record));
@@ -80,24 +68,27 @@ export async function saveWithSync(tx, storeName, record) {
   const keyPath = store.keyPath;
   const id = record[keyPath];
 
-  const previous = await requestToPromise(store.get(id));
+  // Единственный await — чтение предыдущей версии (нужно для field-level merge).
+  const previous = await new Promise((resolve, reject) => {
+    const req = store.get(id);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+
   const stamped = stampSyncFields(record, previous);
 
-  await requestToPromise(store.put(stamped));
-  await recordOutbox(tx, storeName, id, 'upsert');
+  // СИНХРОННО, без await: put + outbox в одной микротаске.
+  store.put(stamped);
+  recordOutboxSync(tx, storeName, id, 'upsert');
 
   return stamped;
 }
 
-/**
- * Удаляет запись. Для sync-сторов ставит метку 'delete' в outbox
- * (на сервере запись получит deleted_at — soft delete).
- */
 export async function deleteWithSync(tx, storeName, id) {
   const store = tx.objectStore(storeName);
-  await requestToPromise(store.delete(id));
+  store.delete(id); // без await — синхронно
 
   if (SYNCABLE.has(storeName)) {
-    await recordOutbox(tx, storeName, id, 'delete');
+    recordOutboxSync(tx, storeName, id, 'delete');
   }
 }
