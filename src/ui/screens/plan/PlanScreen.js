@@ -1,6 +1,8 @@
 /* ==========================================================================
    Экран «План».
    - Карточки целей по умолчанию СВЁРНУТЫ (логика через expandedGoals).
+   - Добавлен свайп влево для удаления цели.
+   - Убран визуальный шум (эмодзи из кнопок и заголовков).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -24,6 +26,7 @@ const forecastCache = new Map();
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
 const ICON_EDIT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+const ICON_SETTINGS = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>`;
 
 function buildSchedule(balance, futureOps, annualRate) {
   let currentBalance = balance;
@@ -115,10 +118,10 @@ export async function renderPlanScreen(container, db) {
       <section class="card" style="margin-bottom: 16px; padding: 12px; border-color: ${isReadOnly ? 'var(--yellow)' : 'var(--border)'}; background: ${isReadOnly ? 'rgba(255,200,87,0.05)' : 'var(--card)'};">
         <label style="font-size: 13px; color: var(--muted); margin-bottom: 8px; display: block; font-weight: 600;">Просмотр данных:</label>
         <select id="owner-switcher" style="width: 100%; font-weight: 600; background: var(--card-2);">
-          <option value="${myId}" ${targetOwnerId === myId ? 'selected' : ''}>👤 Мои данные</option>
-          ${otherOwners.map(id => `<option value="${id}" ${targetOwnerId === id ? 'selected' : ''}>👥 Данные друга (совместный доступ)</option>`).join('')}
+          <option value="${myId}" ${targetOwnerId === myId ? 'selected' : ''}>Мои данные</option>
+          ${otherOwners.map(id => `<option value="${id}" ${targetOwnerId === id ? 'selected' : ''}>Данные друга (совместный доступ)</option>`).join('')}
         </select>
-        ${isReadOnly ? '<div style="color: var(--yellow); font-size: 12px; margin-top: 8px; font-weight: 600;">🔒 Режим чтения. Вы видите данные, которыми с вами поделились.</div>' : ''}
+        ${isReadOnly ? '<div style="color: var(--yellow); font-size: 12px; margin-top: 8px; font-weight: 600;">Режим чтения. Вы видите данные, которыми с вами поделились.</div>' : ''}
       </section>
     `;
   }
@@ -184,13 +187,13 @@ export async function renderPlanScreen(container, db) {
         <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
         <div class="form-row-bottom">
           <select id="goal-category">
-            <option value="short">⚡ Краткосрочная</option>
-            <option value="long" selected>🏦 Долгосрочная</option>
+            <option value="short">Краткосрочная</option>
+            <option value="long" selected>Долгосрочная</option>
           </select>
           <input type="month" id="goal-deadline" required value="${now.getFullYear() + 1}-12">
         </div>
         
-        <button type="button" class="btn-text" id="toggle-advanced-create" style="text-align: left; padding: 8px 0; color: var(--accent);">⚙️ Дополнительные настройки</button>
+        <button type="button" class="btn-text" id="toggle-advanced-create" style="text-align: left; padding: 8px 0; color: var(--accent);">Дополнительные настройки</button>
         
         <div id="advanced-create-fields" style="display: none; flex-direction: column; gap: 8px; background: var(--card-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border);">
           <div class="form-group">
@@ -242,7 +245,6 @@ export async function renderPlanScreen(container, db) {
         .filter(op => op.goalId === goal.id && op.state === 'scheduled' && op.plannedMonth)
         .sort((a, b) => (a.plannedMonth || '').localeCompare(b.plannedMonth || ''));
 
-      // ИЗМЕНЕНО: Теперь по умолчанию false, открываем только если есть в expandedGoals
       const isExpanded = expandedGoals.has(goal.id);
       const isPlansExpanded = expandedPlans.has(goal.id);
       const isSettingsOpen = openSettingsGoalId === goal.id;
@@ -330,14 +332,14 @@ export async function renderPlanScreen(container, db) {
         settingsHtml = `
           <form class="goal-settings-form" data-goal-id="${goal.id}">
             <div class="settings-section">
-              <h4>🎯 Основное</h4>
+              <h4>Основное</h4>
               <div class="form-group">
                 <label>Целевая сумма (₽):</label>
                 <input type="number" name="targetAmountMinor" value="${goal.targetAmountMinor / 100}" required min="1">
               </div>
             </div>
             <div class="settings-section">
-              <h4>📅 Сроки</h4>
+              <h4>Сроки</h4>
               <div class="form-group">
                 <label>Начать копить с:</label>
                 <input type="month" name="startMonth" value="${goal.startMonth || currentMonth}">
@@ -348,14 +350,14 @@ export async function renderPlanScreen(container, db) {
               </div>
             </div>
             <div class="settings-section">
-              <h4>📈 Доходность</h4>
+              <h4>Доходность</h4>
               <div class="form-group">
                 <label>Ставка (% годовых):</label>
                 <input type="number" step="0.1" name="annualRate" value="${goal.annualRate !== null ? goal.annualRate : ''}" placeholder="0">
               </div>
             </div>
             <div class="settings-section">
-              <h4>🎈 Инфляция и Индексация</h4>
+              <h4>Инфляция и Индексация</h4>
               <div class="form-group">
                 <label>Индивидуальная инфляция (% годовых):</label>
                 <input type="number" step="0.1" name="individualInflationRate" value="${goal.individualInflationRate !== null ? goal.individualInflationRate : ''}" placeholder="Общая">
@@ -371,7 +373,7 @@ export async function renderPlanScreen(container, db) {
               </div>` : ''}
             </div>
             <div class="settings-section">
-              <h4>⚙️ Режим плана</h4>
+              <h4>Режим плана</h4>
               <div class="form-group">
                 <select name="planMode">
                   <option value="auto" ${goal.planMode === 'auto' ? 'selected' : ''}>Автоматический</option>
@@ -467,66 +469,72 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
+      // ОБЕРТКА ДЛЯ СВАЙПА
       html += `
-        <div class="goal-item">
-          <div class="goal-header" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
-            <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
-              <span style="font-size: 14px; flex-shrink: 0;">${goal.category === 'short' ? '⚡' : '🏦'}</span>
-              <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${goal.name}</strong>
-            </div>
-            <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
-              <div class="goal-header-amount ${isAmountHidden ? 'blurred' : ''}">
-                ${formatRub(balance)} / ${formatRub(target)} ₽
+        <div class="swipe-wrapper" style="margin-bottom: 12px; position: relative; overflow: hidden; border-radius: 12px;">
+          ${!isReadOnly ? `<div class="swipe-action" data-goal-id="${goal.id}" style="position: absolute; right: 0; top: 0; bottom: 0; width: 80px; background: var(--red); color: white; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; cursor: pointer;">Удалить</div>` : ''}
+          
+          <div class="goal-item swipe-item" style="position: relative; background: var(--card); transition: transform 0.3s ease; padding: 16px; border: 1px solid var(--border);">
+            <div class="goal-header" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
+              <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+                <strong style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${goal.name}</strong>
               </div>
-              <span style="color: var(--muted); font-size: 14px;">${isExpanded ? '▲' : '▼'}</span>
+              <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
+                <div class="goal-header-amount ${isAmountHidden ? 'blurred' : ''}">
+                  ${formatRub(balance)} / ${formatRub(target)} ₽
+                </div>
+                <span style="color: var(--muted); font-size: 14px;">${isExpanded ? '▲' : '▼'}</span>
+              </div>
             </div>
-          </div>
 
-          <div class="goal-body" style="display: ${isExpanded ? 'flex' : 'none'}; flex-direction: column; gap: 16px; margin-top: 16px;">
-            <div class="goal-progress ${isAmountHidden ? 'blurred' : ''}">
-              <span class="percent">${percent}%</span>
-            </div>
-            <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
+            <div class="goal-body" style="display: ${isExpanded ? 'flex' : 'none'}; flex-direction: column; gap: 16px; margin-top: 16px;">
+              <div class="goal-progress ${isAmountHidden ? 'blurred' : ''}">
+                <span class="percent">${percent}%</span>
+              </div>
+              <div class="progress-bar"><div class="fill" style="width: ${percent}%"></div></div>
 
-            ${settingsHtml}
-            ${transferHtml}
-            ${detailsBlockHtml}
+              ${settingsHtml}
+              ${transferHtml}
+              ${detailsBlockHtml}
 
-            ${!isReadOnly ? `
-            <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
-              <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%;">⚙️</button>
-              
-              ${goal.deadlineMonth && balance < target ? `
-                <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex: 1 1 40%;">
-                  ✨ Автоплан
+              ${!isReadOnly ? `
+              <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
+                <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%; display: flex; align-items: center; justify-content: center;">
+                  ${ICON_SETTINGS}
+                </button>
+                
+                ${goal.deadlineMonth && balance < target ? `
+                  <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex: 1 1 40%;">
+                    Автоплан
+                  </button>
+                ` : ''}
+                
+                <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 20%;">+ План</button>
+              </div>
+
+              <form class="add-contrib-form" data-goal-id="${goal.id}">
+                <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
+                <button type="submit" class="btn btn-small" title="Внести факт">+</button>
+              </form>
+
+              ${balance > 0 ? `
+                <button type="button" class="btn-text" data-action="open-transfer" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 4px; color: var(--accent); font-size: 13px;">
+                  Вывести в свободные деньги
                 </button>
               ` : ''}
-              
-              <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 20%;">+ План</button>
+
+              <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
+                <input type="month" class="m-month" required value="${calcStartMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
+                <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
+                <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
+              </form>
+
+              <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
+                ${percent >= 100 ? `<button class="btn btn-small" data-action="achieve" data-goal-id="${goal.id}" style="background:var(--green); color:#000;">Выполнено</button>` : ''}
+                <button class="btn btn-small btn-outline" data-action="delete" data-goal-id="${goal.id}" style="color: var(--red); border-color: var(--red);">Удалить</button>
+              </div>
+              ` : ''}
             </div>
-
-            <form class="add-contrib-form" data-goal-id="${goal.id}">
-              <input type="number" placeholder="Внести факт (₽)" required class="contrib-amount">
-              <button type="submit" class="btn btn-small" title="Внести факт">+</button>
-            </form>
-
-            ${balance > 0 ? `
-              <button type="button" class="btn-text" data-action="open-transfer" data-goal-id="${goal.id}" style="width: 100%; text-align: center; margin-top: 4px; color: var(--accent); font-size: 13px;">
-                Вывести в свободные деньги
-              </button>
-            ` : ''}
-
-            <form class="manual-plan-form" data-goal-id="${goal.id}" style="display:none; flex-direction: column; gap: 8px;">
-              <input type="month" class="m-month" required value="${calcStartMonth}" style="width: 100%; padding: 10px; font-size: 14px;">
-              <input type="number" class="m-amount" placeholder="Сумма (₽)" required style="width: 100%; padding: 10px; font-size: 14px;">
-              <button type="submit" class="btn btn-small" style="background: var(--accent); width: 100%;">Добавить в план</button>
-            </form>
-
-            <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
-              ${percent >= 100 ? `<button class="btn btn-small" data-action="achieve" data-goal-id="${goal.id}" style="background:var(--green); color:#000;">Выполнено</button>` : ''}
-              <button class="btn btn-small btn-outline" data-action="delete" data-goal-id="${goal.id}" style="color: var(--red); border-color: var(--red);">Удалить</button>
-            </div>
-            ` : ''}
           </div>
         </div>
       `;
@@ -560,6 +568,9 @@ export async function renderPlanScreen(container, db) {
   `;
 
   container.innerHTML = html;
+
+  // Инициализация свайпов для целей
+  initSwipe(container, isReadOnly);
 
   const switcher = document.getElementById('owner-switcher');
   if (switcher) {
@@ -707,7 +718,6 @@ export async function renderPlanScreen(container, db) {
   container.querySelectorAll('[data-action="toggle-collapse"]').forEach(el => {
     el.addEventListener('click', () => {
       const goalId = el.dataset.goalId;
-      // ИЗМЕНЕНО: Логика для expandedGoals
       if (expandedGoals.has(goalId)) expandedGoals.delete(goalId);
       else expandedGoals.add(goalId);
       renderPlanScreen(container, db);
@@ -971,15 +981,94 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
+  // Универсальная функция удаления цели (используется и для кнопки, и для свайпа)
+  async function handleGoalDelete(goalId) {
+    const goal = activeGoals.find(g => g.id === goalId);
+    const balance = calculateGoalBalance(goalId, moneyEntries);
+    let moveToPool = false;
+    if (balance > 0) { 
+      moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Свободные деньги.\nОтмена — сжечь (удалить).`); 
+    } else { 
+      if (!confirm('Удалить цель?')) return; 
+    }
+    const cmd = { commandId: generateId(), commandType: 'goal.delete', payload: { goalId, moveToPool }, registeredAt: new Date().toISOString() };
+    try { 
+      await executeCommand(db, cmd); 
+      forecastCache.clear(); 
+      await renderPlanScreen(container, db); 
+    } catch (err) { 
+      alert(err.message); 
+    }
+  }
+
   container.querySelectorAll('[data-action="delete"]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const goalId = btn.dataset.goalId;
-      const goal = activeGoals.find(g => g.id === goalId);
-      const balance = calculateGoalBalance(goalId, moneyEntries);
-      let moveToPool = false;
-      if (balance > 0) { moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Свободные деньги.\nОтмена — сжечь (удалить).`); } else { if (!confirm('Удалить цель?')) return; }
-      const cmd = { commandId: generateId(), commandType: 'goal.delete', payload: { goalId, moveToPool }, registeredAt: new Date().toISOString() };
-      try { await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); }
-    });
+    btn.addEventListener('click', () => handleGoalDelete(btn.dataset.goalId));
   });
+
+  // Инициализация свайпов
+  function initSwipe(container, isReadOnly) {
+    if (isReadOnly) return;
+
+    container.querySelectorAll('.swipe-wrapper').forEach(wrapper => {
+      const item = wrapper.querySelector('.swipe-item');
+      let startX = 0;
+      let currentX = 0;
+      let isDragging = false;
+      let isOpen = false;
+      const threshold = 40;
+      const openDistance = -80;
+
+      const deleteBtn = wrapper.querySelector('.swipe-action');
+      if (deleteBtn) {
+        deleteBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await handleGoalDelete(deleteBtn.dataset.goalId);
+        });
+      }
+
+      item.addEventListener('touchstart', (e) => {
+        startX = e.touches[0].clientX;
+        isDragging = true;
+        item.style.transition = 'none';
+      }, { passive: true });
+
+      item.addEventListener('touchmove', (e) => {
+        if (!isDragging) return;
+        const deltaX = e.touches[0].clientX - startX;
+        
+        if (deltaX > 0 && !isOpen) {
+          currentX = 0;
+        } else if (deltaX < 0 && isOpen) {
+          currentX = Math.max(openDistance + deltaX, openDistance);
+        } else {
+          currentX = Math.min(0, deltaX);
+        }
+        item.style.transform = `translateX(${currentX}px)`;
+      }, { passive: true });
+
+      item.addEventListener('touchend', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        item.style.transition = 'transform 0.3s ease';
+        
+        if (currentX < -threshold) {
+          item.style.transform = `translateX(${openDistance}px)`;
+          isOpen = true;
+          currentX = openDistance;
+        } else {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!wrapper.contains(e.target) && isOpen) {
+          item.style.transform = 'translateX(0)';
+          isOpen = false;
+          currentX = 0;
+        }
+      });
+    });
+  }
 }
