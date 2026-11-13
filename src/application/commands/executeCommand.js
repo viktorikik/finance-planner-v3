@@ -4,6 +4,7 @@
    - С Батча 3-fix: saveItems использует Promise.all, чтобы все get стартовали
      параллельно — это критично для Safari/iPhone (транзакция не успевает
      закрыться между последовательными await).
+   - Добавлен обработчик actualIncome.delete.
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
 import { STORES } from '../../infrastructure/database/dbSchema.js';
@@ -55,7 +56,8 @@ export async function executeCommand(db, command) {
     commandType === 'goal.delete' ||
     commandType === 'goal.achieve' ||
     commandType === 'plannedOperation.generate' ||
-    commandType === 'actualIncome.create'
+    commandType === 'actualIncome.create' ||
+    commandType === 'actualIncome.delete'
   ) {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes', 'settings');
   }
@@ -121,6 +123,9 @@ export async function executeCommand(db, command) {
         break;
       case 'actualIncome.create':
         plan = planActualIncomeCreate(payload);
+        break;
+      case 'actualIncome.delete':
+        await deleteWithSync(tx, 'actualIncomes', payload.id);
         break;
       case 'money.transfer':
         plan = planMoneyTransfer(payload, state);
