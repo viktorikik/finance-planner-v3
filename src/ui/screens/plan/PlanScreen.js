@@ -3,7 +3,7 @@
    - Карточки целей по умолчанию СВЁРНУТЫ.
    - Добавлен свайп влево для удаления цели.
    - Убран визуальный шум (эмодзи).
-   - НОВОЕ: Добавлен список доходов месяца с возможностью удаления.
+   - НОВОЕ: Блок "История доходов" для удаления любых записей.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -22,7 +22,7 @@ let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem(
 let openSettingsGoalId = null;
 let openTransferGoalId = null;
 let isPoolTransferOpen = false;
-let isIncomesListOpen = false; // НОВОЕ: раскрыт ли список доходов
+let isIncomesListOpen = false; // Раскрыт ли список доходов
 const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
@@ -97,12 +97,15 @@ export async function renderPlanScreen(container, db) {
   
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
   
-  // ДОХОДЫ ТЕКУЩЕГО МЕСЯЦА
-  const currentMonthIncomesList = actualIncomes
+  // Сумма доходов ТЕКУЩЕГО месяца
+  const currentMonthIncomes = actualIncomes
     .filter(inc => inc.actualDate.startsWith(currentMonth))
-    .sort((a, b) => new Date(b.actualDate) - new Date(a.actualDate));
-  
-  const currentMonthIncomes = currentMonthIncomesList.reduce((sum, inc) => sum + inc.amountMinor, 0);
+    .reduce((sum, inc) => sum + inc.amountMinor, 0);
+
+  // ИСТОРИЯ ВСЕХ ДОХОДОВ (сортируем по дате: новые сверху, берем последние 20)
+  const allIncomesSorted = [...actualIncomes]
+    .sort((a, b) => new Date(b.actualDate) - new Date(a.actualDate))
+    .slice(0, 20);
 
   let filteredGoals = activeGoals;
   if (currentFilter === 'short') filteredGoals = activeGoals.filter(g => g.category === 'short');
@@ -137,19 +140,18 @@ export async function renderPlanScreen(container, db) {
     `;
   }
 
-  // СПИСОК ДОХОДОВ МЕСЯЦА (раскрывающийся)
+  // БЛОК ИСТОРИИ ДОХОДОВ
   let incomesListHtml = '';
-  if (currentMonthIncomesList.length > 0) {
+  if (allIncomesSorted.length > 0) {
     incomesListHtml = `
       <div style="margin-top: 12px; border-top: 1px dashed var(--border); padding-top: 12px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <button type="button" id="toggle-incomes-list" style="background: none; border: none; padding: 0; color: var(--muted); font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
-            ${isIncomesListOpen ? 'Скрыть детализацию' : `Показать все доходы (${currentMonthIncomesList.length})`}
+          <button type="button" id="toggle-incomes-list" style="background: none; border: none; padding: 0; color: var(--accent); font-size: 13px; cursor: pointer; font-weight: 600;">
+            ${isIncomesListOpen ? 'Скрыть историю доходов' : `Показать историю доходов (${actualIncomes.length})`}
           </button>
-          ${!isReadOnly ? `<button type="button" id="clear-incomes-btn" style="background: none; border: none; color: var(--red); font-size: 12px; cursor: pointer; font-weight: 600;">Очистить</button>` : ''}
         </div>
         <div id="incomes-list-details" style="display: ${isIncomesListOpen ? 'block' : 'none'};">
-          ${currentMonthIncomesList.map(inc => {
+          ${allIncomesSorted.map(inc => {
             const cat = categoriesMeta[inc.category] || { name: 'Без категории', emoji: '' };
             return `
               <div class="swipe-wrapper-income" style="position: relative; overflow: hidden; border-radius: 8px; margin-bottom: 6px;">
@@ -188,7 +190,7 @@ export async function renderPlanScreen(container, db) {
     ${!isReadOnly ? `
     <section class="card" style="border-color: var(--border);">
       <h2 style="display: flex; justify-content: space-between; align-items: center;">
-        <span>Доходы в этом месяце</span>
+        <span>Доходы (этот месяц)</span>
         <span style="color: var(--accent); font-size: 18px;" class="${isAmountHidden ? 'blurred' : ''}">+${formatRub(currentMonthIncomes)} ₽</span>
       </h2>
       <form id="add-income-form" style="display: flex; gap: 8px; align-items: center;">
@@ -640,26 +642,9 @@ export async function renderPlanScreen(container, db) {
     renderPlanScreen(container, db);
   });
 
-  // === НОВОЕ: Управление списком доходов ===
   document.getElementById('toggle-incomes-list')?.addEventListener('click', () => {
     isIncomesListOpen = !isIncomesListOpen;
     renderPlanScreen(container, db);
-  });
-
-  document.getElementById('clear-incomes-btn')?.addEventListener('click', async () => {
-    if (!confirm(`Удалить ВСЕ доходы за ${new Date().toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' })}?`)) return;
-    try {
-      for (const inc of currentMonthIncomesList) {
-        await executeCommand(db, {
-          commandId: generateId(),
-          commandType: 'actualIncome.delete',
-          payload: { id: inc.id }
-        });
-      }
-      await renderPlanScreen(container, db);
-    } catch (err) {
-      alert('Ошибка: ' + err.message);
-    }
   });
 
   const toggleAdvBtn = document.getElementById('toggle-advanced-create');
