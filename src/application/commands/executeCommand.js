@@ -5,6 +5,7 @@
      параллельно — это критично для Safari/iPhone (транзакция не успевает
      закрыться между последовательными await).
    - Добавлен обработчик actualIncome.delete.
+   - При удалении цели (goal.delete) каскадно удаляются все её плановые взносы.
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
 import { STORES } from '../../infrastructure/database/dbSchema.js';
@@ -259,11 +260,18 @@ export async function executeCommand(db, command) {
         if (!goalToAchieve) throw new Error('Цель не найдена');
         plan.newEntries = burnGoalMoney(payload.goalId, state.moneyEntries);
         plan.newGoals.push({ ...goalToAchieve, status: 'achieved', achievedAt: new Date().toISOString().slice(0, 10) });
+        
+        // Также удаляем оставшиеся плановые взносы при достижении цели
+        const opsForAchieved = await getAllFromStore('plannedOperations', tx);
+        for (const op of opsForAchieved.filter(o => o.goalId === payload.goalId)) {
+          await deleteWithSync(tx, 'plannedOperations', op.id);
+        }
         break;
 
       case 'goal.delete':
         const goalToDelete = await getFromStore('goals', payload.goalId, tx);
         if (!goalToDelete) throw new Error('Цель не найдена');
+        
         const balance = calculateGoalBalance(payload.goalId, state.moneyEntries);
         if (balance > 0) {
           if (payload.moveToPool) {
@@ -277,6 +285,14 @@ export async function executeCommand(db, command) {
             plan.newEntries = burnGoalMoney(payload.goalId, state.moneyEntries);
           }
         }
+        
+        // НОВОЕ: Каскадное удаление всех плановых взносов этой цели
+        const allOpsToDelete = await getAllFromStore('plannedOperations', tx);
+        const goalOpsToDelete = allOpsToDelete.filter(op => op.goalId === payload.goalId);
+        for (const op of goalOpsToDelete) {
+          await deleteWithSync(tx, 'plannedOperations', op.id);
+        }
+
         await deleteWithSync(tx, 'goals', payload.goalId);
         break;
 
