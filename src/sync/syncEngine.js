@@ -1,21 +1,25 @@
 /* ==========================================================================
    syncEngine.js — синхронизация IndexedDB ↔ Supabase.
-   Обновлено: защита от параллельных запусков, авто-догрузка (backfill) истории.
+   Обновлено:
+   - Защита от параллельных запусков (замок).
+   - Авто-догрузка (backfill) при появлении нового шаринга.
+   - Первичная полная выгрузка локальных данных (hasDoneFullUpload).
    ========================================================================== */
 import { requestToPromise } from '../infrastructure/database/transaction.js';
 import { SYNCABLE_STORES } from '../infrastructure/database/dbSchema.js';
 import { getSupabaseClient } from '../supabaseClient.js';
+import { generateId } from '../domain/shared/ids.js';
 import {
   getLastSync, setLastSync,
   getForceCloudReset, clearForceCloudReset, clearOutbox,
-  getKnownShares, setKnownShares
+  getKnownShares, setKnownShares,
+  getHasDoneFullUpload, setHasDoneFullUpload
 } from './syncMeta.js';
 
 const SYNCABLE = new Set(SYNCABLE_STORES);
 const PAGE_SIZE = 500;
 const RPC_BATCH = 50;
 
-// ЗАМОК: предотвращает одновременный запуск синхронизации (например, по таймеру и по кнопке)
 let syncPromise = null;
 
 function awaitTx(tx) {
@@ -153,7 +157,7 @@ function mergeRemoteIntoLocal(localRecord, remoteData, remoteFV, remoteUpdatedAt
 }
 
 export async function pull(db) {
-  const lastSync = await getLastSync(db); // Если null, скачается ВСЁ (Backfill)
+  const lastSync = await getLastSync(db);
   const supabase = getSupabaseClient();
 
   let totalApplied = 0;
@@ -213,7 +217,44 @@ async function applyRemoteRows(db, rows) {
   }
 }
 
-// === НОВОЕ: Проверка новых шарингов (Backfill) ===
+// === НОВОЕ: Первичная полная выгрузка локальных данных в облако ===
+async function forceUploadAll(db, supabase) {
+  const { data: userData } = await supabase.auth.getUser();
+  const myId = userData?.user?.id;
+  if (!myId) return 0;
+
+  let uploadCount = 0;
+
+  for (const storeName of SYNCABLE_STORES) {
+    const readTx = db.transaction([storeName], 'readonly');
+    const records = await requestToPromise(readTx.objectStore(storeName).getAll());
+    await awaitTx(readTx);
+
+    const toUpload = records.filter(r => !r._ownerId || r._ownerId === myId);
+    if (toUpload.length === 0) continue;
+
+    const writeTx = db.transaction(['syncOutbox'], 'readwrite');
+    const outStore = writeTx.objectStore('syncOutbox');
+    const now = new Date().toISOString();
+
+    // ВАЖНО (Safari): все put запускаем синхронно, без await между ними.
+    for (const record of toUpload) {
+      outStore.put({
+        id: generateId(),
+        storeName,
+        entityId: record.id,
+        operation: 'upsert',
+        createdAt: now
+      });
+    }
+
+    await awaitTx(writeTx);
+    uploadCount += toUpload.length;
+  }
+
+  return uploadCount;
+}
+
 async function checkForNewShares(db, supabase) {
   try {
     const { data: shares, error } = await supabase.rpc('get_shares_with_me');
@@ -223,12 +264,12 @@ async function checkForNewShares(db, supabase) {
     const savedShareIds = await getKnownShares(db);
 
     const hasNew = currentShareIds.some(id => !savedShareIds.includes(id));
-    
+
     if (hasNew) {
       console.log('[sync] Обнаружен новый совместный доступ. Включаем полную догрузку (backfill).');
-      await setLastSync(db, null); // Сбрасываем дату, чтобы pull скачал всё
+      await setLastSync(db, null);
     }
-    
+
     return { currentShares: currentShareIds };
   } catch (err) {
     console.warn('[sync] Ошибка проверки шарингов:', err);
@@ -236,29 +277,40 @@ async function checkForNewShares(db, supabase) {
   }
 }
 
-async function doSync(db) {
+async function doSync(db, options = {}) {
   const supabase = getSupabaseClient();
   const { data: sessData } = await supabase.auth.getSession();
   if (!sessData?.session) return { ok: false, reason: 'not-authenticated' };
 
-  // 1. Проверяем новые шаринги ПЕРЕД push/pull
   const { currentShares } = await checkForNewShares(db, supabase);
 
+  let isForceReset = false;
   if (await getForceCloudReset(db)) {
+    isForceReset = true;
     console.log('[sync] forceCloudReset: очищаем облачные данные...');
     const { error } = await supabase.rpc('reset_my_cloud_data');
     if (error) throw error;
     await clearForceCloudReset(db);
     await clearOutbox(db);
     await setLastSync(db, null);
+    await setHasDoneFullUpload(db, true);
+  }
+
+  // Первичная полная выгрузка: если ещё не делали (или принудительно).
+  const hasDoneFullUpload = await getHasDoneFullUpload(db);
+  const shouldForceUpload = !isForceReset && (!hasDoneFullUpload || options.forceUpload);
+
+  if (shouldForceUpload) {
+    const uploadCount = await forceUploadAll(db, supabase);
+    console.log(`[sync] Полная выгрузка: добавлено в очередь ${uploadCount} записей`);
+    await setHasDoneFullUpload(db, true);
   }
 
   const pushResult = await push(db);
   const pullResult = await pull(db);
-  
+
   await setLastSync(db, new Date().toISOString());
 
-  // 2. Обновляем knownShares только ПОСЛЕ успешного синка
   if (currentShares.length > 0) {
     await setKnownShares(db, currentShares);
   }
@@ -266,13 +318,13 @@ async function doSync(db) {
   return { ok: true, ...pushResult, ...pullResult };
 }
 
-export async function sync(db) {
+export async function sync(db, options = {}) {
   if (syncPromise) {
     console.log('[sync] Синхронизация уже идет, ждем текущую...');
     return syncPromise;
   }
-  
-  syncPromise = doSync(db);
+
+  syncPromise = doSync(db, options);
   try {
     const res = await syncPromise;
     return res;
