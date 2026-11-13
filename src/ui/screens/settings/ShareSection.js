@@ -1,6 +1,7 @@
 /* ==========================================================================
    ShareSection.js — блок «Совместный доступ» в настройках.
    Позволяет приглашать по email, видеть списки (кому дал / кто дал) и отзывать.
+   Обновлено: аватарки и имена вместо голых email.
    ========================================================================== */
 import { getSupabaseClient } from '../../../supabaseClient.js';
 
@@ -39,21 +40,47 @@ export async function renderShareSection(anchor) {
     loadError = err.message || 'Ошибка загрузки списков';
   }
 
+  // Функция для генерации аватарки (кружок с буквой)
+  const renderAvatar = (name, email) => {
+    const letter = (name || email || '?')[0].toUpperCase();
+    // Генерируем случайный, но стабильный цвет на основе строки
+    const str = name || email || 'user';
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    const bgColor = `hsl(${hue}, 60%, 50%)`;
+
+    return `<div style="width: 36px; height: 36px; border-radius: 50%; background: ${bgColor}; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; flex-shrink: 0;">${letter}</div>`;
+  };
+
   const renderList = (items, type) => {
     if (!items || items.length === 0) {
       return '<p class="muted" style="font-size:12px; margin: 8px 0;">Список пуст.</p>';
     }
 
-    return items.map(item => `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding: 8px 0; border-bottom: 1px solid var(--border);">
-        <span style="font-size:14px; color:var(--text);">${item.email || 'Без email'}</span>
-        ${type === 'out' ? `
-          <button class="btn btn-small btn-outline" data-action="revoke" data-id="${item.viewer_id}" style="color: var(--red); border-color: var(--red); padding: 4px 8px; font-size: 12px;">
-            Отозвать
-          </button>
-        ` : ''}
-      </div>
-    `).join('');
+    return items.map(item => {
+      const displayName = item.display_name || 'Пользователь';
+      const email = item.email || 'Без email';
+
+      return `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0; border-bottom: 1px solid var(--border);">
+          <div style="display:flex; align-items:center; gap: 12px; min-width: 0;">
+            ${renderAvatar(item.display_name, item.email)}
+            <div style="display:flex; flex-direction:column; min-width: 0;">
+              <span style="font-size:14px; color:var(--text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${displayName}</span>
+              <span style="font-size:12px; color:var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${email}</span>
+            </div>
+          </div>
+          ${type === 'out' ? `
+            <button class="btn btn-small btn-outline" data-action="revoke" data-id="${item.viewer_id}" style="color: var(--red); border-color: var(--red); padding: 4px 8px; font-size: 12px; flex-shrink: 0;">
+              Отозвать
+            </button>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
   };
 
   anchor.innerHTML = `
@@ -123,11 +150,11 @@ export async function renderShareSection(anchor) {
       if (error) throw error;
 
       alert(`Доступ успешно выдан для ${email}!`);
-      await renderShareSection(anchor); // Перерисовываем, чтобы обновить список
+      await renderShareSection(anchor);
     } catch (err) {
       console.error('[ShareSection] error:', err);
       let msg = err.message || 'Ошибка выдачи доступа';
-      if (msg.includes('не найден')) msg = 'Пользователь с таким email не зарегистрирован.';
+      if (msg.includes('не найден')) msg = 'Пользователь с таким email не зарегистрирован. Попросите друга сначала войти в приложение.';
       if (msg.includes('самим собой')) msg = 'Нельзя выдать доступ самому себе.';
       errorBox.textContent = msg;
       errorBox.style.display = 'block';
