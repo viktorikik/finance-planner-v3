@@ -2,6 +2,7 @@
    Экран «Настройки».
    - Современный дизайн (аккордеоны, минимум эмодзи, чистые формы).
    - Добавлен экспорт в CSV, HTML и PDF (через Print).
+   - Убран лишний визуальный шум (эмодзи из кнопок).
    ========================================================================== */
 import { generateBackup, restoreBackup } from '../../../infrastructure/backup/exportBackup.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -13,6 +14,7 @@ import { renderShareSection } from './ShareSection.js';
 const ICON_ARCHIVE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`;
 const ICON_RESTORE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/><path d="M12 16v-4m-2 2l2-2 2 2"/></svg>`;
 const ICON_DELETE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
+const ICON_LOCK = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-left: 4px; color: var(--muted);"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`;
 
 export async function renderSettingsScreen(container, db) {
   async function render() {
@@ -82,14 +84,14 @@ export async function renderSettingsScreen(container, db) {
 
           <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
             <button id="btn-export-html" class="btn" style="background: var(--accent); color: #fff;">
-              📄 Красивый отчет (HTML)
+              Красивый отчет (HTML)
             </button>
             <div style="display: flex; gap: 8px;">
               <button id="btn-export-pdf" class="btn btn-outline" style="flex: 1;">
-                📑 Сохранить в PDF
+                Сохранить в PDF
               </button>
               <button id="btn-export-csv" class="btn btn-outline" style="flex: 1;">
-                📊 Таблица (CSV)
+                Таблица (CSV)
               </button>
             </div>
           </div>
@@ -402,7 +404,7 @@ export async function renderSettingsScreen(container, db) {
       <div class="category-item ${cat.isArchived ? 'archived' : ''}">
         <div class="category-dot" style="background: ${cat.color}"></div>
         <span class="category-emoji">${cat.emoji || '📦'}</span>
-        <span class="category-name">${cat.name}${cat.isSystem ? ' 🔒' : ''}</span>
+        <span class="category-name">${cat.name}${cat.isSystem ? ICON_LOCK : ''}</span>
         <div class="category-actions">
           <button data-action="toggle-archive" data-id="${cat.id}" data-archived="${cat.isArchived}" title="${cat.isArchived ? 'Восстановить' : 'Архивировать'}" style="display: flex; align-items: center; justify-content: center;">
             ${cat.isArchived ? ICON_RESTORE : ICON_ARCHIVE}
