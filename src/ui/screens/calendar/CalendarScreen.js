@@ -1,16 +1,17 @@
 /* ==========================================================================
    Экран «Календарь».
-   Показывает плановые и фактические события, включая доходы и расходы из бюджета.
-   Добавлена возможность удаления планов и фактов.
+   Показывает плановые и фактические события.
+   + Поддержка режима «Только чтение» (совместный доступ).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
 import { calculateExecutionStatus } from '../../../domain/planning/executionStatus.js';
 import { generateId } from '../../../domain/shared/ids.js';
+import { getSupabaseClient } from '../../../supabaseClient.js';
+import { getActiveViewOwnerId } from '../../state.js';
 
 const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
-// SVG-иконки
 const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>`;
 
 function getTodayString() {
@@ -25,19 +26,12 @@ function getCurrentMonthString() {
 
 function formatMonthTitle(ym) {
   const [y, m] = ym.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleDateString('ru-RU', {
-    month: 'long',
-    year: 'numeric',
-  });
+  return new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
 }
 
 function formatDateLong(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
+  return new Date(y, m - 1, d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 function shiftMonth(ym, delta) {
@@ -51,9 +45,7 @@ function formatRub(kopeks) {
 }
 
 function escapeHtml(str) {
-  return String(str || '').replace(/[&<>"']/g, c => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  }[c]));
+  return String(str || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 function getStatusLabel(status) {
@@ -68,6 +60,10 @@ function getStatusLabel(status) {
 }
 
 export async function renderCalendarScreen(container, db) {
+  const supabase = getSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const myId = user?.id;
+
   const state = {
     currentMonth: getCurrentMonthString(),
     selectedDate: getTodayString(),
@@ -76,7 +72,8 @@ export async function renderCalendarScreen(container, db) {
     actualContribs: [],
     plannedTransactions: [],
     actualTransactions: [],
-    actualIncomes: []
+    actualIncomes: [],
+    isReadOnly: false
   };
 
   let activeFormId = null;
@@ -85,12 +82,24 @@ export async function renderCalendarScreen(container, db) {
     const stores = ['goals', 'plannedOperations', 'actualContributions', 'plannedTransactions', 'actualTransactions', 'actualIncomes'];
     const tx = db.transaction(stores, 'readonly');
     
-    state.goals = await getAllFromStore('goals', tx);
-    state.plannedOps = await getAllFromStore('plannedOperations', tx);
-    state.actualContribs = await getAllFromStore('actualContributions', tx);
-    state.plannedTransactions = await getAllFromStore('plannedTransactions', tx);
-    state.actualTransactions = await getAllFromStore('actualTransactions', tx);
-    state.actualIncomes = await getAllFromStore('actualIncomes', tx);
+    const goalsRaw = await getAllFromStore('goals', tx);
+    const plannedOpsRaw = await getAllFromStore('plannedOperations', tx);
+    const actualContribsRaw = await getAllFromStore('actualContributions', tx);
+    const plannedTxRaw = await getAllFromStore('plannedTransactions', tx);
+    const actualTxRaw = await getAllFromStore('actualTransactions', tx);
+    const actualIncomesRaw = await getAllFromStore('actualIncomes', tx);
+
+    // === Определение контекста ===
+    let targetOwnerId = getActiveViewOwnerId() || myId;
+    state.isReadOnly = targetOwnerId !== myId;
+
+    // === Фильтрация данных ===
+    state.goals = goalsRaw.filter(g => (g._ownerId || myId) === targetOwnerId);
+    state.plannedOps = plannedOpsRaw.filter(op => (op._ownerId || myId) === targetOwnerId);
+    state.actualContribs = actualContribsRaw.filter(c => (c._ownerId || myId) === targetOwnerId);
+    state.plannedTransactions = plannedTxRaw.filter(t => (t._ownerId || myId) === targetOwnerId);
+    state.actualTransactions = actualTxRaw.filter(t => (t._ownerId || myId) === targetOwnerId);
+    state.actualIncomes = actualIncomesRaw.filter(inc => (inc._ownerId || myId) === targetOwnerId);
   }
 
   function buildEventsMap() {
@@ -226,12 +235,13 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-meta">План: ${formatRub(op.plannedAmountMinor)} ₽ · Факт: ${formatRub(actualAmountMinor)} ₽</div>
                 <div style="font-size:12px; margin-top:4px; color:${s.color}; font-weight:600;">${s.text}</div>
               </div>
+              ${!state.isReadOnly ? `
               <div style="display:flex; gap:8px; align-items:center;">
                 <button class="btn btn-small btn-outline" data-action="register-fact" data-op-id="${op.id}">+ Факт</button>
                 <button class="btn-icon delete" data-action="delete-plan" data-id="${op.id}" title="Удалить план">${ICON_TRASH}</button>
-              </div>
+              </div>` : ''}
             </div>
-            ${isExpanded ? renderInlineForm(op, status, goal) : ''}
+            ${isExpanded && !state.isReadOnly ? renderInlineForm(op, status, goal) : ''}
           </div>
         `;
       }
@@ -244,7 +254,7 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-title" style="color: var(--green);">+ ${escapeHtml(inc.title)}</div>
                 <div class="event-meta">План: ${formatRub(inc.amountMinor)} ₽ (Доход)</div>
               </div>
-              <button class="btn-icon delete" data-action="delete-plan-tx" data-id="${inc.id}" title="Удалить план">${ICON_TRASH}</button>
+              ${!state.isReadOnly ? `<button class="btn-icon delete" data-action="delete-plan-tx" data-id="${inc.id}" title="Удалить план">${ICON_TRASH}</button>` : ''}
             </div>
           </div>
         `;
@@ -258,7 +268,7 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-title" style="color: var(--red);">- ${escapeHtml(exp.title)}</div>
                 <div class="event-meta">План: ${formatRub(exp.amountMinor)} ₽ (Расход)</div>
               </div>
-              <button class="btn-icon delete" data-action="delete-plan-tx" data-id="${exp.id}" title="Удалить план">${ICON_TRASH}</button>
+              ${!state.isReadOnly ? `<button class="btn-icon delete" data-action="delete-plan-tx" data-id="${exp.id}" title="Удалить план">${ICON_TRASH}</button>` : ''}
             </div>
           </div>
         `;
@@ -278,7 +288,7 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-title">Взнос: ${goal ? escapeHtml(goal.name) : 'Цель удалена'}</div>
                 <div class="event-meta">${formatRub(c.amountMinor)} ₽ · ${typeLabel}</div>
               </div>
-              <button class="btn-icon delete" data-action="reverse-contrib" data-id="${c.id}" title="Отменить взнос">${ICON_TRASH}</button>
+              ${!state.isReadOnly ? `<button class="btn-icon delete" data-action="reverse-contrib" data-id="${c.id}" title="Отменить взнос">${ICON_TRASH}</button>` : ''}
             </div>
           </div>
         `;
@@ -292,7 +302,7 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-title" style="color: var(--green);">+ ${escapeHtml(inc.title || 'Доход')}</div>
                 <div class="event-meta">${formatRub(inc.amountMinor)} ₽ (Факт)</div>
               </div>
-              <button class="btn-icon delete" data-action="delete-fact-tx" data-id="${inc.id}" data-type="income" title="Удалить факт">${ICON_TRASH}</button>
+              ${!state.isReadOnly ? `<button class="btn-icon delete" data-action="delete-fact-tx" data-id="${inc.id}" data-type="income" title="Удалить факт">${ICON_TRASH}</button>` : ''}
             </div>
           </div>
         `;
@@ -306,7 +316,7 @@ export async function renderCalendarScreen(container, db) {
                 <div class="event-title" style="color: var(--red);">- ${escapeHtml(exp.title || 'Расход')}</div>
                 <div class="event-meta">${formatRub(exp.amountMinor)} ₽ (Факт)</div>
               </div>
-              <button class="btn-icon delete" data-action="delete-fact-tx" data-id="${exp.id}" data-type="expense" title="Удалить факт">${ICON_TRASH}</button>
+              ${!state.isReadOnly ? `<button class="btn-icon delete" data-action="delete-fact-tx" data-id="${exp.id}" data-type="expense" title="Удалить факт">${ICON_TRASH}</button>` : ''}
             </div>
           </div>
         `;
@@ -343,6 +353,7 @@ export async function renderCalendarScreen(container, db) {
     const eventsByDate = buildEventsMap();
 
     container.innerHTML = `
+      ${state.isReadOnly ? '<div style="background:var(--yellow); color:#000; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; font-weight:600; text-align:center;">🔒 Режим чтения</div>' : ''}
       <section class="card">
         <div class="calendar-nav">
           <button type="button" id="cal-prev">‹</button>
@@ -378,101 +389,103 @@ export async function renderCalendarScreen(container, db) {
       });
     });
 
-    container.querySelectorAll('[data-action="register-fact"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeFormId = btn.dataset.opId;
-        render();
-        setTimeout(() => {
-          const input = container.querySelector(`#fact-form-${activeFormId} .fact-amount`);
-          if (input) input.focus();
-        }, 50);
+    if (!state.isReadOnly) {
+      container.querySelectorAll('[data-action="register-fact"]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          activeFormId = btn.dataset.opId;
+          render();
+          setTimeout(() => {
+            const input = container.querySelector(`#fact-form-${activeFormId} .fact-amount`);
+            if (input) input.focus();
+          }, 50);
+        });
       });
-    });
 
-    container.querySelectorAll('[data-action="cancel-fact"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        activeFormId = null;
-        render();
-      });
-    });
-
-    container.querySelectorAll('[data-action="delete-plan"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Удалить этот плановый взнос? (Внесенные факты останутся)')) return;
-        const id = btn.dataset.id;
-        await executeCommand(db, { commandId: generateId(), commandType: 'plannedOperation.delete', payload: { operationId: id } });
-        await loadData();
-        render();
-      });
-    });
-
-    container.querySelectorAll('[data-action="delete-plan-tx"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Удалить этот план? (Внесенные факты останутся)')) return;
-        const id = btn.dataset.id;
-        await executeCommand(db, { commandId: generateId(), commandType: 'plannedTransaction.delete', payload: { id } });
-        await loadData();
-        render();
-      });
-    });
-
-    container.querySelectorAll('[data-action="delete-fact-tx"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Удалить эту запись? Бюджет и аналитика будут пересчитаны.')) return;
-        const id = btn.dataset.id;
-        await executeCommand(db, { commandId: generateId(), commandType: 'actualTransaction.delete', payload: { id } });
-        await loadData();
-        render();
-      });
-    });
-
-    container.querySelectorAll('[data-action="reverse-contrib"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Отменить этот взнос? Деньги вернутся в свободные.')) return;
-        alert('Функция отмены взносов в разработке. Пока удалите через экран Плана.');
-      });
-    });
-
-    container.querySelectorAll('form[id^="fact-form-"]').forEach(form => {
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const opId = form.id.replace('fact-form-', '');
-        const op = state.plannedOps.find(o => o.id === opId);
-        if (!op) return;
-
-        const amountRub = parseFloat(form.querySelector('.fact-amount').value);
-        const actualDate = form.querySelector('.fact-date').value;
-        if (isNaN(amountRub) || amountRub <= 0 || !actualDate) return;
-
-        const btn = form.querySelector('button[type="submit"]');
-        btn.disabled = true; btn.textContent = '...';
-
-        const type = actualDate < op.plannedDate ? 'early' : 'planned';
-
-        const cmd = {
-          commandId: generateId(),
-          commandType: 'contribution.create',
-          payload: {
-            goalId: op.goalId,
-            amountMinor: Math.round(amountRub * 100),
-            actualDate,
-            type,
-            plannedOperationId: op.id
-          },
-          registeredAt: new Date().toISOString()
-        };
-
-        try {
-          await executeCommand(db, cmd);
+      container.querySelectorAll('[data-action="cancel-fact"]').forEach(btn => {
+        btn.addEventListener('click', () => {
           activeFormId = null;
+          render();
+        });
+      });
+
+      container.querySelectorAll('[data-action="delete-plan"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Удалить этот плановый взнос? (Внесенные факты останутся)')) return;
+          const id = btn.dataset.id;
+          await executeCommand(db, { commandId: generateId(), commandType: 'plannedOperation.delete', payload: { operationId: id } });
           await loadData();
           render();
-        } catch (err) {
-          alert('Ошибка: ' + err.message);
-          btn.disabled = false; btn.textContent = 'Сохранить';
-        }
+        });
       });
-    });
+
+      container.querySelectorAll('[data-action="delete-plan-tx"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Удалить этот план? (Внесенные факты останутся)')) return;
+          const id = btn.dataset.id;
+          await executeCommand(db, { commandId: generateId(), commandType: 'plannedTransaction.delete', payload: { id } });
+          await loadData();
+          render();
+        });
+      });
+
+      container.querySelectorAll('[data-action="delete-fact-tx"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Удалить эту запись? Бюджет и аналитика будут пересчитаны.')) return;
+          const id = btn.dataset.id;
+          await executeCommand(db, { commandId: generateId(), commandType: 'actualTransaction.delete', payload: { id } });
+          await loadData();
+          render();
+        });
+      });
+
+      container.querySelectorAll('[data-action="reverse-contrib"]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Отменить этот взнос? Деньги вернутся в свободные.')) return;
+          alert('Функция отмены взносов в разработке. Пока удалите через экран Плана.');
+        });
+      });
+
+      container.querySelectorAll('form[id^="fact-form-"]').forEach(form => {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const opId = form.id.replace('fact-form-', '');
+          const op = state.plannedOps.find(o => o.id === opId);
+          if (!op) return;
+
+          const amountRub = parseFloat(form.querySelector('.fact-amount').value);
+          const actualDate = form.querySelector('.fact-date').value;
+          if (isNaN(amountRub) || amountRub <= 0 || !actualDate) return;
+
+          const btn = form.querySelector('button[type="submit"]');
+          btn.disabled = true; btn.textContent = '...';
+
+          const type = actualDate < op.plannedDate ? 'early' : 'planned';
+
+          const cmd = {
+            commandId: generateId(),
+            commandType: 'contribution.create',
+            payload: {
+              goalId: op.goalId,
+              amountMinor: Math.round(amountRub * 100),
+              actualDate,
+              type,
+              plannedOperationId: op.id
+            },
+            registeredAt: new Date().toISOString()
+          };
+
+          try {
+            await executeCommand(db, cmd);
+            activeFormId = null;
+            await loadData();
+            render();
+          } catch (err) {
+            alert('Ошибка: ' + err.message);
+            btn.disabled = false; btn.textContent = 'Сохранить';
+          }
+        });
+      });
+    }
   }
 
   await loadData();
