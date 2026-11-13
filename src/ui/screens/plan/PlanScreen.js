@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлена возможность редактирования суммы взноса с пересчетом остальных.
+   - Поддержка совместного доступа (переключатель и read-only режим).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -9,6 +9,8 @@ import { forecastGoal } from '../../../domain/forecasting/goalForecast.js';
 import { calculateRequiredContribution } from '../../../domain/forecasting/calculateRequiredContribution.js';
 import { generateId } from '../../../domain/shared/ids.js';
 import { renderBudgetWidget } from '../../widgets/BudgetWidget.js';
+import { getSupabaseClient } from '../../../supabaseClient.js';
+import { getActiveViewOwnerId, setActiveViewOwnerId } from '../../state.js';
 
 const collapsedGoals = new Set();
 const expandedPlans = new Set();
@@ -44,12 +46,16 @@ function buildSchedule(balance, futureOps, annualRate) {
 }
 
 export async function renderPlanScreen(container, db) {
+  const supabase = getSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const myId = user?.id;
+
   const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings', 'categories'], 'readonly');
-  const goals = await getAllFromStore('goals', tx);
-  const moneyEntries = await getAllFromStore('moneyEntries', tx);
-  const allPlannedOps = await getAllFromStore('plannedOperations', tx);
-  const actualIncomes = await getAllFromStore('actualIncomes', tx);
-  const allCategories = await getAllFromStore('categories', tx);
+  const allGoalsRaw = await getAllFromStore('goals', tx);
+  const allMoneyEntriesRaw = await getAllFromStore('moneyEntries', tx);
+  const allPlannedOpsRaw = await getAllFromStore('plannedOperations', tx);
+  const actualIncomesRaw = await getAllFromStore('actualIncomes', tx);
+  const allCategoriesRaw = await getAllFromStore('categories', tx);
   
   const settingsTx = db.transaction(['settings'], 'readonly');
   const generalInflationSetting = await new Promise((resolve) => {
@@ -57,6 +63,24 @@ export async function renderPlanScreen(container, db) {
     req.onsuccess = () => resolve(req.result ? req.result.value : null);
     req.onerror = () => resolve(null);
   });
+
+  // === Определение контекста (Свои данные / Данные друга) ===
+  const ownerIds = new Set(allGoalsRaw.map(g => g._ownerId || myId));
+  const otherOwners = [...ownerIds].filter(id => id !== myId);
+
+  let targetOwnerId = getActiveViewOwnerId();
+  if (!targetOwnerId || (targetOwnerId !== myId && !ownerIds.has(targetOwnerId))) {
+    targetOwnerId = myId;
+    setActiveViewOwnerId(null);
+  }
+  const isReadOnly = targetOwnerId !== myId;
+
+  // === Фильтрация данных ===
+  const goals = allGoalsRaw.filter(g => (g._ownerId || myId) === targetOwnerId);
+  const moneyEntries = allMoneyEntriesRaw.filter(e => (e._ownerId || myId) === targetOwnerId);
+  const allPlannedOps = allPlannedOpsRaw.filter(op => (op._ownerId || myId) === targetOwnerId);
+  const actualIncomes = actualIncomesRaw.filter(inc => (inc._ownerId || myId) === targetOwnerId);
+  const allCategories = allCategoriesRaw.filter(cat => (cat._ownerId || myId) === targetOwnerId);
 
   const activeGoals = goals.filter(g => g.status === 'active');
   const achievedGoals = goals.filter(g => g.status === 'achieved');
@@ -87,7 +111,24 @@ export async function renderPlanScreen(container, db) {
     .filter(c => c.type === 'income' && !c.isArchived)
     .sort((a, b) => a.sortOrder - b.sortOrder);
 
+  // === Переключатель контекста ===
+  let switcherHtml = '';
+  if (otherOwners.length > 0) {
+    switcherHtml = `
+      <section class="card" style="margin-bottom: 16px; padding: 12px; border-color: ${isReadOnly ? 'var(--yellow)' : 'var(--border)'}; background: ${isReadOnly ? 'rgba(255,200,87,0.05)' : 'var(--card)'};">
+        <label style="font-size: 13px; color: var(--muted); margin-bottom: 8px; display: block; font-weight: 600;">Просмотр данных:</label>
+        <select id="owner-switcher" style="width: 100%; font-weight: 600; background: var(--card-2);">
+          <option value="${myId}" ${targetOwnerId === myId ? 'selected' : ''}>👤 Мои данные</option>
+          ${otherOwners.map(id => `<option value="${id}" ${targetOwnerId === id ? 'selected' : ''}>👥 Данные друга (совместный доступ)</option>`).join('')}
+        </select>
+        ${isReadOnly ? '<div style="color: var(--yellow); font-size: 12px; margin-top: 8px; font-weight: 600;">🔒 Режим чтения. Вы видите данные, которыми с вами поделились.</div>' : ''}
+      </section>
+    `;
+  }
+
   let html = `
+    ${switcherHtml}
+
     <div style="text-align: center; margin-bottom: 20px; position: relative;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
       <div style="font-size: 32px; font-weight: 800; color: var(--green);" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(totalAccumulated)} ₽</div>
@@ -98,6 +139,7 @@ export async function renderPlanScreen(container, db) {
 
     <div id="budget-widget-container" style="margin-bottom: 16px;"></div>
 
+    ${!isReadOnly ? `
     <section class="card" style="border-color: var(--border);">
       <h2 style="display: flex; justify-content: space-between; align-items: center;">
         <span>Доходы в этом месяце</span>
@@ -111,14 +153,15 @@ export async function renderPlanScreen(container, db) {
         <button type="submit" class="btn btn-small" style="flex-shrink: 0;">+</button>
       </form>
     </section>
+    ` : ''}
 
-    ${poolBalance > 0 || isPoolTransferOpen ? `
+    ${(poolBalance > 0 || isPoolTransferOpen) ? `
       <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
         <h2 style="color: var(--green); margin-bottom: 8px;">Свободные деньги</h2>
         <div style="font-size: 24px; font-weight: bold; margin-bottom: 4px;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
         <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Деньги, не привязанные к конкретной цели.</div>
         
-        ${!isPoolTransferOpen ? `
+        ${!isReadOnly ? (!isPoolTransferOpen ? `
           <button class="btn btn-small btn-outline" id="btn-open-pool-transfer" style="border-color: var(--green); color: var(--green);">Перевести в цель</button>
         ` : `
           <form id="pool-transfer-form" style="display: flex; flex-direction: column; gap: 8px; background: var(--card-2); padding: 12px; border-radius: 8px;">
@@ -132,10 +175,11 @@ export async function renderPlanScreen(container, db) {
               <button type="button" class="btn btn-small btn-outline" id="btn-cancel-pool-transfer" style="flex: 1;">Отмена</button>
             </div>
           </form>
-        `}
+        `) : ''}
       </section>
     ` : ''}
 
+    ${!isReadOnly ? `
     <section class="card">
       <h2>Создать цель</h2>
       <form id="create-goal-form" class="create-goal-form">
@@ -177,6 +221,7 @@ export async function renderPlanScreen(container, db) {
         <button type="submit" class="btn">Создать цель</button>
       </form>
     </section>
+    ` : ''}
 
     <div class="filter-tabs">
       <button class="filter-tab ${currentFilter === 'all' ? 'active' : ''}" data-filter="all">Все</button>
@@ -283,7 +328,8 @@ export async function renderPlanScreen(container, db) {
       }
 
       let settingsHtml = '';
-      if (isSettingsOpen) {
+      if (isSettingsOpen && !isReadOnly) {
+        // ... (код настроек цели остается прежним, но мы добавили проверку !isReadOnly)
         settingsHtml = `
           <form class="goal-settings-form" data-goal-id="${goal.id}">
             <div class="settings-section">
@@ -350,7 +396,7 @@ export async function renderPlanScreen(container, db) {
       }
 
       let transferHtml = '';
-      if (isTransferOpen) {
+      if (isTransferOpen && !isReadOnly) {
         transferHtml = `
           <form class="goal-transfer-form" data-goal-id="${goal.id}" style="background: rgba(124,92,255,0.1); padding: 12px; border-radius: 8px; margin-top: 8px; border: 1px solid var(--accent);">
             <div class="form-group">
@@ -370,7 +416,7 @@ export async function renderPlanScreen(container, db) {
         <div style="margin-top: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <span style="font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase;">Детализация по месяцам</span>
-            <button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red); font-size: 12px;">Очистить</button>
+            ${!isReadOnly ? `<button type="button" class="btn-text clear-plans-btn" data-goal-id="${goal.id}" style="color: var(--red); font-size: 12px;">Очистить</button>` : ''}
           </div>
           <div class="${isAmountHidden ? 'blurred' : ''}" style="display: flex; flex-direction: column;">
             ${visibleSchedule.map(row => {
@@ -390,14 +436,14 @@ export async function renderPlanScreen(container, db) {
                   </div>
                   <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
                     <span style="font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--text);">${formatRub(row.total)} ₽</span>
-                    ${row.id ? `
+                    ${row.id && !isReadOnly ? `
                       <button type="button" class="btn-icon edit-plan" data-op-id="${row.id}" data-current-amount="${row.contribution}" style="color:var(--muted); padding: 4px; display: flex; align-items: center; height: 24px;">
                         ${ICON_EDIT}
                       </button>
                       <button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 18px; padding: 4px; line-height: 1; height: 24px;">
                         ×
                       </button>
-                    ` : '<span style="width: 44px; display: inline-block;"></span>'}
+                    ` : ''}
                   </div>
                 </div>
               `;
@@ -449,6 +495,7 @@ export async function renderPlanScreen(container, db) {
             ${transferHtml}
             ${detailsBlockHtml}
 
+            ${!isReadOnly ? `
             <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
               <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%;">⚙️</button>
               
@@ -482,6 +529,7 @@ export async function renderPlanScreen(container, db) {
               ${percent >= 100 ? `<button class="btn btn-small" data-action="achieve" data-goal-id="${goal.id}" style="background:var(--green); color:#000;">Выполнено</button>` : ''}
               <button class="btn btn-small btn-outline" data-action="delete" data-goal-id="${goal.id}" style="color: var(--red); border-color: var(--red);">Удалить</button>
             </div>
+            ` : ''}
           </div>
         </div>
       `;
@@ -516,9 +564,19 @@ export async function renderPlanScreen(container, db) {
 
   container.innerHTML = html;
 
+  // --- Обработчик переключателя ---
+  const switcher = document.getElementById('owner-switcher');
+  if (switcher) {
+    switcher.addEventListener('change', (e) => {
+      const val = e.target.value;
+      setActiveViewOwnerId(val === myId ? null : val);
+      renderPlanScreen(container, db);
+    });
+  }
+
   const widgetContainer = document.getElementById('budget-widget-container');
   if (widgetContainer) {
-    await renderBudgetWidget(widgetContainer, db);
+    await renderBudgetWidget(widgetContainer, db, targetOwnerId);
   }
 
   document.getElementById('toggle-eye').addEventListener('click', () => {
@@ -714,7 +772,7 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  document.getElementById('add-income-form').addEventListener('submit', async (e) => {
+  document.getElementById('add-income-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const amountRub = parseFloat(document.getElementById('income-amount').value);
     const category = document.getElementById('income-category').value;
@@ -731,7 +789,7 @@ export async function renderPlanScreen(container, db) {
     } catch (err) { alert('Ошибка: ' + err.message); e.target.querySelector('button').disabled = false; }
   });
 
-  document.getElementById('create-goal-form').addEventListener('submit', async (e) => {
+  document.getElementById('create-goal-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = document.getElementById('goal-name').value;
     const targetRub = parseFloat(document.getElementById('goal-target').value);
@@ -806,7 +864,6 @@ export async function renderPlanScreen(container, db) {
     });
   });
 
-  // РЕДАКТИРОВАНИЕ ПЛАНОВОГО ВЗНОСА
   container.querySelectorAll('.edit-plan').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
