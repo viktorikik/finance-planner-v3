@@ -54,6 +54,11 @@ export async function executeCommand(db, command) {
     stores.push('actualContributions', 'moneyLots', 'moneyEntries', 'moneyMovements', 'actualIncomes', 'settings');
   }
 
+  // Добавляем таблицы для пересчета при обновлении планового взноса
+  if (commandType === 'plannedOperation.update') {
+    stores.push('moneyEntries', 'settings');
+  }
+
   if (commandType.startsWith('plannedTransaction.')) {
     stores.push('plannedTransactions', 'actualTransactions'); 
   }
@@ -74,6 +79,7 @@ export async function executeCommand(db, command) {
     stores = [...new Set([...stores, ...Object.keys(STORES)])];
   }
 
+  // Защита от дублирования таблиц в транзакции
   stores = [...new Set(stores)];
 
   const tx = db.transaction(stores, 'readwrite');
