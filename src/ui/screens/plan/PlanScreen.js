@@ -3,7 +3,7 @@
    - Карточки целей по умолчанию СВЁРНУТЫ.
    - Свайп влево для удаления цели.
    - Блок «История доходов».
-   - NEW v4.4.1: приветствие с именем и мотивирующей фразой (компактная версия).
+   - v4.4.2: приветствие + описание «Личный финансовый планировщик…» + мотивация.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -149,9 +149,10 @@ export async function renderPlanScreen(container, db) {
       <section class="greeting-card">
         <div class="greeting-title">${timeWord}, ${escapeHtml(myName)}! 👋</div>
         <p class="greeting-text">
-          Здесь собрана вся информация о твоих финансовых планах.
-          <span class="greeting-motivation">${motivation}</span>
+          Личный финансовый планировщик: сколько денег действительно доступно,
+          какие цели достижимы и как сегодняшние решения повлияют на будущее.
         </p>
+        <p class="greeting-motivation">${motivation}</p>
       </section>
     `;
   }
@@ -234,7 +235,6 @@ export async function renderPlanScreen(container, db) {
     `;
   }
 
-  // Блок "Всего накоплено" сделан более компактным
   let html = `
     ${switcherHtml}
 
