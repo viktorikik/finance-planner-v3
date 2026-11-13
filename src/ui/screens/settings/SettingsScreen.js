@@ -3,12 +3,14 @@
    - Общие настройки (инфляция)
    - Управление категориями
    - Резервное копирование
+   - Синхронизация (блок SyncSection)
    - Опасная зона (очистка данных)
    ========================================================================== */
 import { generateBackup, restoreBackup } from '../../../infrastructure/backup/exportBackup.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { generateId } from '../../../domain/shared/ids.js';
+import { renderSyncSection } from './SyncSection.js';
 
 // Чистые SVG-иконки для действий
 const ICON_ARCHIVE = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>`;
@@ -94,6 +96,9 @@ export async function renderSettingsScreen(container, db) {
         </div>
       </section>
 
+      <!-- СИНХРОНИЗАЦИЯ -->
+      <div id="sync-section-anchor"></div>
+
       <!-- ОПАСНАЯ ЗОНА -->
       <section class="danger-zone">
         <h2>⚠️ Опасная зона</h2>
@@ -113,7 +118,7 @@ export async function renderSettingsScreen(container, db) {
       <!-- ПОДВАЛ -->
       <section class="card" style="opacity: 0.6; text-align: center; font-size: 12px; padding: 16px;">
         <div>Планировщик финансов v4.0</div>
-        <div>Schema v13</div>
+        <div>Schema v13 · Sync v1</div>
       </section>
 
       <!-- МОДАЛКА ПОДТВЕРЖДЕНИЯ -->
@@ -123,6 +128,17 @@ export async function renderSettingsScreen(container, db) {
     `;
 
     container.innerHTML = html;
+
+    // --- Рендер блока синхронизации ---
+    const syncAnchor = container.querySelector('#sync-section-anchor');
+    if (syncAnchor) {
+      try {
+        await renderSyncSection(syncAnchor, db);
+      } catch (err) {
+        console.error('[Settings] Ошибка блока синхронизации:', err);
+        syncAnchor.innerHTML = `<section class="card"><h2>Синхронизация</h2><p class="muted">Не удалось загрузить блок: ${err.message}</p></section>`;
+      }
+    }
 
     // --- Обработчики: Инфляция ---
     document.getElementById('btn-save-inflation').addEventListener('click', async (e) => {
@@ -256,7 +272,7 @@ export async function renderSettingsScreen(container, db) {
   // === Вспомогательная функция: рендер списка категорий ===
   function renderCategoryList(cats) {
     if (!cats.length) return '<p class="muted" style="padding: 8px 0;">Нет категорий</p>';
-    
+
     return cats.map(cat => `
       <div class="category-item ${cat.isArchived ? 'archived' : ''}">
         <div class="category-dot" style="background: ${cat.color}"></div>
