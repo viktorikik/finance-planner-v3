@@ -371,3 +371,180 @@ body.is-auth-screen #screen {
 .danger-zone-accordion { border-color: rgba(212, 119, 109, 0.3); background: rgba(212, 119, 109, 0.02); }
 .danger-zone-accordion[open] { border-color: var(--red); }
 .danger-zone-accordion summary::after { color: var(--red); }
+
+/* ============================================
+   AUTH SCREEN POLISH v2 (added in v4.4.1)
+   ============================================ */
+
+.auth-brand {
+  text-align: center;
+  margin-bottom: 16px;
+}
+.auth-brand-mark {
+  font-size: 48px;
+  display: inline-block;
+  filter: drop-shadow(0 4px 14px rgba(213, 232, 74, 0.4));
+  animation: brandFloat 3s ease-in-out infinite;
+}
+@keyframes brandFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.auth-field .auth-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s;
+  min-height: 52px;
+}
+.auth-field .auth-input-wrap:focus-within {
+  border-color: var(--accent);
+}
+.auth-input-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px 0 14px;
+  color: var(--muted);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.auth-field .auth-input-wrap input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 14px 8px;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text);
+  min-height: 52px;
+}
+.auth-field .auth-input-wrap input::placeholder {
+  color: var(--muted);
+  opacity: 0.6;
+}
+.auth-password-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 0 14px;
+  height: 100%;
+  min-height: 52px;
+  cursor: pointer;
+  color: var(--muted);
+  transition: color 0.15s;
+}
+.auth-password-toggle:hover { color: var(--text); }
+
+.auth-field-err {
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+  padding-left: 4px;
+  margin-top: 4px;
+}
+
+.auth-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.auth-msg-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.auth-msg-error {
+  background: rgba(212, 119, 109, 0.1);
+  color: var(--red);
+}
+.auth-msg-success {
+  background: rgba(120, 152, 121, 0.12);
+  color: var(--green);
+}
+.auth-msg-info {
+  background: rgba(216, 166, 90, 0.12);
+  color: var(--yellow);
+}
+
+.auth-submit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.auth-submit.is-loading {
+  cursor: progress;
+}
+
+@keyframes authSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+.auth-spinner {
+  animation: authSpin 0.8s linear infinite;
+}
+
+/* ============================================
+   GREETING CARD (added in v4.4.1)
+   ============================================ */
+
+.greeting-card {
+  background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  margin-bottom: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.greeting-card::before {
+  content: '';
+  position: absolute;
+  top: -50px;
+  right: -50px;
+  width: 140px;
+  height: 140px;
+  background: var(--accent);
+  opacity: 0.14;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.greeting-title {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+  color: var(--text);
+  position: relative;
+  z-index: 1;
+}
+.greeting-text {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.5;
+  margin: 0;
+  position: relative;
+  z-index: 1;
+}
+.greeting-motivation {
+  display: block;
+  margin-top: 8px;
+  color: var(--text);
+  font-weight: 600;
+}
