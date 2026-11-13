@@ -1,6 +1,6 @@
 /* ==========================================================================
    Экран «План».
-   Добавлена возможность редактирования целевой суммы цели.
+   Добавлена возможность редактирования суммы конкретного месяца в графике.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -21,6 +21,7 @@ const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+const ICON_EDIT = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
 
 function buildSchedule(balance, futureOps, annualRate) {
   let currentBalance = balance;
@@ -249,7 +250,6 @@ export async function renderPlanScreen(container, db) {
       const { reqContrib, fc, schedule: cachedSchedule } = forecastCache.get(cacheKey);
       schedule = cachedSchedule;
 
-      // Верстка прогноза (inline-flex)
       if (fc.status === 'projected') {
         forecastHtml = `
           <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
@@ -365,7 +365,6 @@ export async function renderPlanScreen(container, db) {
         `;
       }
 
-      // Верстка графика (inline-flex)
       const visibleSchedule = isPlansExpanded ? schedule : schedule.slice(0, 3);
       const plansHtml = schedule.length > 0 ? `
         <div style="margin-top: 16px;">
@@ -391,7 +390,14 @@ export async function renderPlanScreen(container, db) {
                   </div>
                   <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end;">
                     <span style="font-weight: 700; font-size: 15px; white-space: nowrap; color: var(--text);">${formatRub(row.total)} ₽</span>
-                    ${row.id ? `<button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 18px; padding: 4px; line-height: 1;">×</button>` : '<span style="width: 26px; display: inline-block;"></span>'}
+                    ${row.id ? `
+                      <button type="button" class="btn-icon edit-plan" data-op-id="${row.id}" data-current-amount="${row.contribution}" style="color:var(--muted); padding: 4px; display: flex; align-items: center; height: 24px;">
+                        ${ICON_EDIT}
+                      </button>
+                      <button type="button" class="btn-icon delete-plan" data-op-id="${row.id}" style="color:var(--muted); font-size: 18px; padding: 4px; line-height: 1; height: 24px;">
+                        ×
+                      </button>
+                    ` : '<span style="width: 44px; display: inline-block;"></span>'}
                   </div>
                 </div>
               `;
@@ -500,6 +506,12 @@ export async function renderPlanScreen(container, db) {
         : `<p class="muted" style="text-align: left; padding: 0;">Достигнутых целей пока нет, но всё впереди. Работаем над достижением!</p>`
       }
     </section>
+  `;
+
+  html += `
+    <div class="modal-overlay" id="edit-op-modal">
+      <div class="modal-content" id="edit-op-content"></div>
+    </div>
   `;
 
   container.innerHTML = html;
@@ -791,6 +803,57 @@ export async function renderPlanScreen(container, db) {
       const calcStartMonth = (goal.startMonth && goal.startMonth > currentMonth) ? goal.startMonth : currentMonth;
       const cmd = { commandId: generateId(), commandType: 'plannedOperation.generate', payload: { goalId, currentMonth: calcStartMonth }, registeredAt: new Date().toISOString() };
       try { btn.disabled = true; btn.textContent = '...'; await executeCommand(db, cmd); forecastCache.clear(); await renderPlanScreen(container, db); } catch (err) { alert(err.message); btn.disabled = false; }
+    });
+  });
+
+  // РЕДАКТИРОВАНИЕ ПЛАНОВОГО ВЗНОСА
+  container.querySelectorAll('.edit-plan').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const opId = btn.dataset.opId;
+      const currentAmount = parseInt(btn.dataset.currentAmount, 10) / 100;
+      
+      const modal = document.getElementById('edit-op-modal');
+      const content = document.getElementById('edit-op-content');
+      
+      content.innerHTML = `
+        <h3>Изменить взнос</h3>
+        <p style="margin-bottom: 16px;">Введите новую сумму для этого месяца (в рублях).</p>
+        <div class="modal-input">
+          <input type="number" id="edit-op-amount" value="${currentAmount}" required min="1" step="1">
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-outline" id="btn-edit-cancel">Отмена</button>
+          <button class="btn" id="btn-edit-save">Сохранить</button>
+        </div>
+      `;
+      
+      modal.classList.add('active');
+      
+      document.getElementById('btn-edit-cancel').addEventListener('click', () => modal.classList.remove('active'));
+      
+      document.getElementById('btn-edit-save').addEventListener('click', async () => {
+        const newAmountRub = parseFloat(document.getElementById('edit-op-amount').value);
+        if (isNaN(newAmountRub) || newAmountRub <= 0) {
+          alert('Введите корректную сумму больше нуля.');
+          return;
+        }
+        
+        try {
+          const cmd = {
+            commandId: generateId(),
+            commandType: 'plannedOperation.update',
+            payload: { operationId: opId, plannedAmountMinor: Math.round(newAmountRub * 100) },
+            registeredAt: new Date().toISOString()
+          };
+          await executeCommand(db, cmd);
+          modal.classList.remove('active');
+          forecastCache.clear();
+          await renderPlanScreen(container, db);
+        } catch (err) {
+          alert('Ошибка: ' + err.message);
+        }
+      });
     });
   });
 
