@@ -1,6 +1,9 @@
 /* ==========================================================================
    Исполнитель команд.
-   С Bатча 2: сохранения и удаления проходят через saveWithSync/deleteWithSync.
+   - С Батча 2: сохранения и удаления проходят через saveWithSync/deleteWithSync.
+   - С Батча 3-fix: saveItems использует Promise.all, чтобы все get стартовали
+     параллельно — это критично для Safari/iPhone (транзакция не успевает
+     закрыться между последовательными await).
    ========================================================================== */
 import { getFromStore, getAllFromStore, putIntoStore } from '../../infrastructure/database/transaction.js';
 import { STORES } from '../../infrastructure/database/dbSchema.js';
@@ -334,7 +337,6 @@ export async function executeCommand(db, command) {
             req.onsuccess = resolve; req.onerror = () => reject(req.error);
           });
         }
-        // Флаг для синхронизатора: при следующем sync удалить все данные пользователя на сервере.
         await putIntoStore('syncMeta', {
           id: 'forceCloudReset', value: true, at: new Date().toISOString()
         }, tx);
@@ -367,10 +369,10 @@ export async function executeCommand(db, command) {
         throw new Error(`Неизвестный тип: ${commandType}`);
     }
 
+    // Параллельный запуск всех get — критично для Safari.
     const saveItems = async (storeName, items) => {
-      if (items && items.length > 0) {
-        for (const item of items) await saveWithSync(tx, storeName, item);
-      }
+      if (!items || items.length === 0) return;
+      await Promise.all(items.map(item => saveWithSync(tx, storeName, item)));
     };
 
     await saveItems('actualContributions', plan.newContributions);
