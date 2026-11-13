@@ -1,18 +1,22 @@
 /* ==========================================================================
    syncEngine.js — синхронизация IndexedDB ↔ Supabase.
-   Обновлено: добавлено поле _ownerId для поддержки совместного доступа.
+   Обновлено: защита от параллельных запусков, авто-догрузка (backfill) истории.
    ========================================================================== */
 import { requestToPromise } from '../infrastructure/database/transaction.js';
 import { SYNCABLE_STORES } from '../infrastructure/database/dbSchema.js';
 import { getSupabaseClient } from '../supabaseClient.js';
 import {
   getLastSync, setLastSync,
-  getForceCloudReset, clearForceCloudReset, clearOutbox
+  getForceCloudReset, clearForceCloudReset, clearOutbox,
+  getKnownShares, setKnownShares
 } from './syncMeta.js';
 
 const SYNCABLE = new Set(SYNCABLE_STORES);
 const PAGE_SIZE = 500;
 const RPC_BATCH = 50;
+
+// ЗАМОК: предотвращает одновременный запуск синхронизации (например, по таймеру и по кнопке)
+let syncPromise = null;
 
 function awaitTx(tx) {
   return new Promise((resolve, reject) => {
@@ -57,7 +61,6 @@ async function prepareTasks(db, collapsedEntries) {
       continue;
     }
 
-    // Защита: если запись принадлежит другому пользователю (viewer пытается изменить чужое)
     if (record._ownerId && record._ownerId !== myId) {
       continue;
     }
@@ -150,7 +153,7 @@ function mergeRemoteIntoLocal(localRecord, remoteData, remoteFV, remoteUpdatedAt
 }
 
 export async function pull(db) {
-  const lastSync = await getLastSync(db);
+  const lastSync = await getLastSync(db); // Если null, скачается ВСЁ (Backfill)
   const supabase = getSupabaseClient();
 
   let totalApplied = 0;
@@ -159,7 +162,6 @@ export async function pull(db) {
   while (true) {
     let query = supabase
       .from('sync_entities')
-      // ДОБАВЛЕНО: user_id для определения владельца
       .select('id, user_id, entity_type, data, field_versions, updated_at, deleted_at')
       .order('updated_at', { ascending: true })
       .limit(PAGE_SIZE);
@@ -211,11 +213,36 @@ async function applyRemoteRows(db, rows) {
   }
 }
 
-export async function sync(db) {
-  const supabase = getSupabaseClient();
+// === НОВОЕ: Проверка новых шарингов (Backfill) ===
+async function checkForNewShares(db, supabase) {
+  try {
+    const { data: shares, error } = await supabase.rpc('get_shares_with_me');
+    if (error || !shares) return { currentShares: [] };
 
+    const currentShareIds = shares.map(s => s.owner_id).sort();
+    const savedShareIds = await getKnownShares(db);
+
+    const hasNew = currentShareIds.some(id => !savedShareIds.includes(id));
+    
+    if (hasNew) {
+      console.log('[sync] Обнаружен новый совместный доступ. Включаем полную догрузку (backfill).');
+      await setLastSync(db, null); // Сбрасываем дату, чтобы pull скачал всё
+    }
+    
+    return { currentShares: currentShareIds };
+  } catch (err) {
+    console.warn('[sync] Ошибка проверки шарингов:', err);
+    return { currentShares: [] };
+  }
+}
+
+async function doSync(db) {
+  const supabase = getSupabaseClient();
   const { data: sessData } = await supabase.auth.getSession();
   if (!sessData?.session) return { ok: false, reason: 'not-authenticated' };
+
+  // 1. Проверяем новые шаринги ПЕРЕД push/pull
+  const { currentShares } = await checkForNewShares(db, supabase);
 
   if (await getForceCloudReset(db)) {
     console.log('[sync] forceCloudReset: очищаем облачные данные...');
@@ -228,7 +255,28 @@ export async function sync(db) {
 
   const pushResult = await push(db);
   const pullResult = await pull(db);
+  
   await setLastSync(db, new Date().toISOString());
 
+  // 2. Обновляем knownShares только ПОСЛЕ успешного синка
+  if (currentShares.length > 0) {
+    await setKnownShares(db, currentShares);
+  }
+
   return { ok: true, ...pushResult, ...pullResult };
+}
+
+export async function sync(db) {
+  if (syncPromise) {
+    console.log('[sync] Синхронизация уже идет, ждем текущую...');
+    return syncPromise;
+  }
+  
+  syncPromise = doSync(db);
+  try {
+    const res = await syncPromise;
+    return res;
+  } finally {
+    syncPromise = null;
+  }
 }
