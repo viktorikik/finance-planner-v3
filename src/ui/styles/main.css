@@ -373,7 +373,7 @@ body.is-auth-screen #screen {
 .danger-zone-accordion summary::after { color: var(--red); }
 
 /* ============================================
-   AUTH SCREEN POLISH v2 (added in v4.4.1)
+   AUTH SCREEN POLISH v2 (v4.4.1)
    ============================================ */
 
 .auth-brand {
@@ -500,64 +500,15 @@ body.is-auth-screen #screen {
 }
 
 /* ============================================
-   GREETING CARD (added in v4.4.1)
+   GREETING CARD (v4.4.2)
+   Один блок — заголовок, описание, мотивация.
    ============================================ */
 
 .greeting-card {
   background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 20px 22px;
-  margin-bottom: 16px;
-  position: relative;
-  overflow: hidden;
-}
-.greeting-card::before {
-  content: '';
-  position: absolute;
-  top: -50px;
-  right: -50px;
-  width: 140px;
-  height: 140px;
-  background: var(--accent);
-  opacity: 0.14;
-  border-radius: 50%;
-  pointer-events: none;
-}
-.greeting-title {
-  font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  margin-bottom: 8px;
-  color: var(--text);
-  position: relative;
-  z-index: 1;
-}
-.greeting-text {
-  font-size: 14px;
-  color: var(--muted);
-  font-weight: 500;
-  line-height: 1.5;
-  margin: 0;
-  position: relative;
-  z-index: 1;
-}
-.greeting-motivation {
-  display: block;
-  margin-top: 8px;
-  color: var(--text);
-  font-weight: 600;
-}
-
-/* ============================================
-   GREETING CARD (Compact) (added in v4.4.1)
-   ============================================ */
-
-.greeting-card {
-  background: linear-gradient(135deg, var(--card) 0%, var(--card-2) 100%);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px 18px; /* Чуть плотнее */
+  padding: 16px 18px;
   margin-bottom: 16px;
   position: relative;
   overflow: hidden;
@@ -575,26 +526,32 @@ body.is-auth-screen #screen {
   pointer-events: none;
 }
 .greeting-title {
-  font-size: 18px; /* Уменьшили с 20px */
+  font-size: 18px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: var(--text);
   position: relative;
   z-index: 1;
 }
 .greeting-text {
-  font-size: 13px; /* Уменьшили с 14px */
+  font-size: 13px;
   color: var(--muted);
   font-weight: 500;
-  line-height: 1.45;
+  line-height: 1.5;
   margin: 0;
   position: relative;
   z-index: 1;
 }
 .greeting-motivation {
   display: block;
-  margin-top: 6px;
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
   color: var(--text);
   font-weight: 600;
+  font-size: 13px;
+  font-style: italic;
+  position: relative;
+  z-index: 1;
 }
