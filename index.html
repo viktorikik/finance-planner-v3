@@ -6,7 +6,7 @@
 
   <meta name="theme-color" content="#0f1117">
   <meta name="color-scheme" content="dark">
-  <title>Планировщик финансов</title>
+  <title>Мои финансы</title>
 
   <style>html{background:#0f1117}body.booting{visibility:hidden}</style>
 
@@ -19,22 +19,23 @@
   <div id="app">
 
     <header class="app-header">
-      <h1>💰 Планировщик финансов</h1>
-      <p class="subtitle">v4.0 — Schema v13</p>
+      <div style="display:flex; flex-direction:column;">
+        <h1>Мои финансы</h1>
+        <p class="subtitle">v4.0 — Schema v14</p>
+      </div>
+      <button class="settings-icon-btn" data-tab="settings" aria-label="Настройки">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
     </header>
 
     <nav class="tabs" aria-label="Основная навигация">
-      <button class="tab" data-tab="plan">📋 План</button>
-      <button class="tab" data-tab="budget">💵 Бюджет</button>
-      <button class="tab" data-tab="calendar">📅 Календарь</button>
-      <button class="tab" data-tab="statistics">📊 Статистика</button>
+      <button class="tab" data-tab="plan">План</button>
+      <button class="tab" data-tab="budget">Бюджет</button>
+      <button class="tab" data-tab="calendar">Календарь</button>
+      <button class="tab" data-tab="statistics">Статистика</button>
     </nav>
 
     <main id="screen" class="screen" aria-live="polite"></main>
-
-    <footer class="app-footer">
-      <a href="#/settings" data-tab="settings">⚙️ Настройки</a>
-    </footer>
 
   </div>
 
