@@ -3,7 +3,7 @@
    - Карточки целей по умолчанию СВЁРНУТЫ.
    - Свайп влево для удаления цели.
    - Блок «История доходов».
-   - NEW v4.4.1: приветствие с именем и мотивирующей фразой.
+   - NEW v4.4.1: приветствие с именем и мотивирующей фразой (компактная версия).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -51,7 +51,6 @@ function buildSchedule(balance, futureOps, annualRate) {
   });
 }
 
-/* Безопасное экранирование для вставки в HTML (защита от «<», «&» и т.п.) */
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -63,11 +62,9 @@ export async function renderPlanScreen(container, db) {
   const { data: { user } } = await supabase.auth.getUser();
   const myId = user?.id;
 
-  // === Параллельно запускаем запрос display_name из profiles ===
   const profilePromise = user
     ? supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle()
     : Promise.resolve({ data: null, error: null });
-  // =============================================================
 
   const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings', 'categories'], 'readonly');
   const allGoalsRaw = await getAllFromStore('goals', tx);
@@ -108,7 +105,6 @@ export async function renderPlanScreen(container, db) {
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-  // === Разрешаем display_name ===
   let displayName = null;
   try { displayName = localStorage.getItem('cached_display_name') || null; } catch {}
   if (user) {
@@ -159,7 +155,6 @@ export async function renderPlanScreen(container, db) {
       </section>
     `;
   }
-  // =============================
 
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
 
@@ -193,13 +188,15 @@ export async function renderPlanScreen(container, db) {
   let switcherHtml = '';
   if (otherOwners.length > 0) {
     switcherHtml = `
-      <section class="card" style="margin-bottom: 16px; padding: 12px; border-color: ${isReadOnly ? 'var(--yellow)' : 'var(--border)'}; background: ${isReadOnly ? 'rgba(255,200,87,0.05)' : 'var(--card)'};">
-        <label style="font-size: 13px; color: var(--muted); margin-bottom: 8px; display: block; font-weight: 600;">Просмотр данных:</label>
-        <select id="owner-switcher" style="width: 100%; font-weight: 600; background: var(--card-2);">
-          <option value="${myId}" ${targetOwnerId === myId ? 'selected' : ''}>Мои данные</option>
-          ${otherOwners.map(id => `<option value="${id}" ${targetOwnerId === id ? 'selected' : ''}>Данные друга (совместный доступ)</option>`).join('')}
-        </select>
-        ${isReadOnly ? '<div style="color: var(--yellow); font-size: 12px; margin-top: 8px; font-weight: 600;">Режим чтения. Вы видите данные, которыми с вами поделились.</div>' : ''}
+      <section class="card compact-switcher" style="margin-bottom: 12px; padding: 10px 14px; border-color: ${isReadOnly ? 'var(--yellow)' : 'var(--border)'}; background: ${isReadOnly ? 'rgba(255,200,87,0.05)' : 'var(--card)'};">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <label style="font-size: 12px; color: var(--muted); font-weight: 600; white-space: nowrap;">Просмотр:</label>
+          <select id="owner-switcher" style="flex: 1; min-width: 0; font-weight: 600; background: var(--card-2); padding: 8px 12px; font-size: 13px; min-height: 38px; border-radius: 8px;">
+            <option value="${myId}" ${targetOwnerId === myId ? 'selected' : ''}>Мои данные</option>
+            ${otherOwners.map(id => `<option value="${id}" ${targetOwnerId === id ? 'selected' : ''}>Данные друга</option>`).join('')}
+          </select>
+        </div>
+        ${isReadOnly ? '<div style="color: var(--yellow); font-size: 12px; margin-top: 6px; font-weight: 600;">Режим чтения</div>' : ''}
       </section>
     `;
   }
@@ -237,24 +234,25 @@ export async function renderPlanScreen(container, db) {
     `;
   }
 
+  // Блок "Всего накоплено" сделан более компактным
   let html = `
     ${switcherHtml}
 
     ${greetingHtml}
 
-    <div style="text-align: center; margin-bottom: 20px; position: relative;">
-      <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
-      <div style="font-size: 32px; font-weight: 800; color: var(--green);" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(totalAccumulated)} ₽</div>
-      <button id="toggle-eye" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; opacity: 0.7; padding: 8px; color: var(--text);">
+    <div style="text-align: center; margin: 12px 0 16px 0; position: relative;">
+      <div style="font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 2px;">Всего накоплено</div>
+      <div style="font-size: 28px; font-weight: 800; color: var(--green); line-height: 1.1;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(totalAccumulated)} ₽</div>
+      <button id="toggle-eye" style="position: absolute; right: 0; top: 50%; transform: translateY(-50%); background: var(--card-2); border: 1px solid var(--border); border-radius: 50%; cursor: pointer; padding: 8px; color: var(--muted); display: flex; align-items: center; justify-content: center; width: 36px; height: 36px;">
         ${isAmountHidden ? SVG_EYE_CLOSED : SVG_EYE_OPEN}
       </button>
     </div>
 
-    <div id="budget-widget-container" style="margin-bottom: 16px;"></div>
+    <div id="budget-widget-container" style="margin-bottom: 12px;"></div>
 
     ${!isReadOnly ? `
-    <section class="card" style="border-color: var(--border);">
-      <h2 style="display: flex; justify-content: space-between; align-items: center;">
+    <section class="card" style="border-color: var(--border); padding: 16px;">
+      <h2 style="display: flex; justify-content: space-between; align-items: center; font-size: 18px; margin-bottom: 12px;">
         <span>Доходы (этот месяц)</span>
         <span style="color: var(--accent); font-size: 18px;" class="${isAmountHidden ? 'blurred' : ''}">+${formatRub(currentMonthIncomes)} ₽</span>
       </h2>
@@ -263,16 +261,16 @@ export async function renderPlanScreen(container, db) {
         <select id="income-category" style="padding: 10px 14px; font-size: 14px; width: auto;">
           ${activeIncomeCats.map(c => `<option value="${c.id}">${c.emoji || ''} ${c.name}</option>`).join('')}
         </select>
-        <button type="submit" class="btn btn-small" style="flex-shrink: 0;">+</button>
+        <button type="submit" class="btn btn-small" style="flex-shrink: 0; min-height: 42px;">+</button>
       </form>
       ${incomesListHtml}
     </section>
     ` : ''}
 
     ${(poolBalance > 0 || isPoolTransferOpen) ? `
-      <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05);">
-        <h2 style="color: var(--green); margin-bottom: 8px;">Свободные деньги</h2>
-        <div style="font-size: 24px; font-weight: bold; margin-bottom: 4px;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
+      <section class="card" style="border-color: var(--green); background: rgba(61, 220, 151, 0.05); padding: 16px;">
+        <h2 style="color: var(--green); margin-bottom: 8px; font-size: 18px;">Свободные деньги</h2>
+        <div style="font-size: 22px; font-weight: bold; margin-bottom: 4px;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
         <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Деньги, не привязанные к конкретной цели.</div>
 
         ${!isReadOnly ? (!isPoolTransferOpen ? `
@@ -294,8 +292,8 @@ export async function renderPlanScreen(container, db) {
     ` : ''}
 
     ${!isReadOnly ? `
-    <section class="card">
-      <h2>Создать цель</h2>
+    <section class="card" style="padding: 16px;">
+      <h2 style="font-size: 18px; margin-bottom: 12px;">Создать цель</h2>
       <form id="create-goal-form" class="create-goal-form">
         <input type="text" id="goal-name" placeholder="Название цели" required>
         <input type="number" id="goal-target" placeholder="Сумма (₽)" required>
@@ -332,7 +330,7 @@ export async function renderPlanScreen(container, db) {
           </div>
         </div>
 
-        <button type="submit" class="btn">Создать цель</button>
+        <button type="submit" class="btn" style="min-height: 48px;">Создать цель</button>
       </form>
     </section>
     ` : ''}
@@ -658,7 +656,7 @@ export async function renderPlanScreen(container, db) {
 
   html += `
     <section class="card" style="opacity: 0.8;">
-      <h2>Архив достижений</h2>
+      <h2 style="font-size: 18px; margin-bottom: 12px;">Архив достижений</h2>
       ${achievedGoals.length > 0
         ? `<p class="muted" style="text-align: left; padding: 0; margin-bottom: 12px; color: var(--green); font-weight: 600;">Вы молодец! Уже достигнуто ${achievedGoals.length} ${achievedGoals.length === 1 ? 'цель' : (achievedGoals.length < 5 ? 'цели' : 'целей')}! Продолжайте в том же духе.</p>
            <div style="display: flex; flex-direction: column; gap: 8px;">
