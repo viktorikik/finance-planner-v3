@@ -3,8 +3,8 @@
    - Карточки целей по умолчанию СВЁРНУТЫ.
    - Свайп влево для удаления цели.
    - Блок «История доходов».
-   - v4.4.4: приветствие + описание + мотивация.
-   - v4.4.4: в свитчере показываем имя друга (из profiles.display_name).
+   - v4.4.5: приветствие + описание + мотивация.
+   - v4.4.5: свитчер показывает имя друга (через общий utils/ownerNames.js).
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -15,6 +15,7 @@ import { generateId } from '../../../domain/shared/ids.js';
 import { renderBudgetWidget } from '../../widgets/BudgetWidget.js';
 import { getSupabaseClient } from '../../../supabaseClient.js';
 import { getActiveViewOwnerId, setActiveViewOwnerId } from '../../state.js';
+import { resolveOwnerNames } from '../../utils/ownerNames.js';
 
 const expandedGoals = new Set();
 const expandedPlans = new Set();
@@ -25,8 +26,6 @@ let openTransferGoalId = null;
 let isPoolTransferOpen = false;
 let isIncomesListOpen = false;
 const forecastCache = new Map();
-
-const NAMES_CACHE_KEY = 'cached_owner_names';
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
 const SVG_EYE_CLOSED = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
@@ -60,61 +59,6 @@ function escapeHtml(str) {
   }[c]));
 }
 
-/* Кеш имён владельцев: { userId: displayName } */
-function readNamesCache() {
-  try {
-    const raw = localStorage.getItem(NAMES_CACHE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function writeNamesCache(names) {
-  try {
-    localStorage.setItem(NAMES_CACHE_KEY, JSON.stringify(names));
-  } catch { /* ignore */ }
-}
-
-/* Сетевой запрос имён по списку id (возвращает { id: name }) */
-async function fetchOwnerNames(supabase, ids) {
-  const result = {};
-  if (!ids.length) return result;
-  try {
-    const { data: profiles, error } = await supabase
-      .from('profiles')
-      .select('id, display_name')
-      .in('id', ids);
-    if (error) {
-      console.warn('[PlanScreen] fetchOwnerNames error:', error.message);
-      return result;
-    }
-    (profiles || []).forEach(p => {
-      const name = (p.display_name || '').trim();
-      if (name) result[p.id] = name;
-    });
-  } catch (err) {
-    console.warn('[PlanScreen] fetchOwnerNames failed:', err?.message);
-  }
-  return result;
-}
-
-/* Фоновое обновление кеша — не блокирует рендер */
-function refreshOwnerNamesInBackground(supabase, ids) {
-  if (!ids.length) return;
-  fetchOwnerNames(supabase, ids).then(fresh => {
-    if (!fresh || Object.keys(fresh).length === 0) return;
-    const current = readNamesCache();
-    const merged = { ...current, ...fresh };
-    // Оставляем в кеше только актуальных владельцев
-    const trimmed = {};
-    ids.forEach(id => { if (merged[id]) trimmed[id] = merged[id]; });
-    writeNamesCache(trimmed);
-  }).catch(() => { /* ignore */ });
-}
-
 export async function renderPlanScreen(container, db) {
   const supabase = getSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -141,37 +85,11 @@ export async function renderPlanScreen(container, db) {
   const ownerIds = new Set(allGoalsRaw.map(g => g._ownerId || myId));
   const otherOwners = [...ownerIds].filter(id => id !== myId);
 
-  // === Загрузка имён владельцев-друзей ===
-  const cachedNames = readNamesCache();
-  const ownerNames = { ...cachedNames };
-  const missingIds = otherOwners.filter(id => !ownerNames[id]);
-
-  if (otherOwners.length > 0) {
-    if (missingIds.length === otherOwners.length) {
-      // Первый запуск — await, чтобы имя появилось сразу
-      try {
-        const fetched = await fetchOwnerNames(supabase, otherOwners);
-        Object.assign(ownerNames, fetched);
-        const trimmed = {};
-        otherOwners.forEach(id => { if (ownerNames[id]) trimmed[id] = ownerNames[id]; });
-        writeNamesCache(trimmed);
-      } catch { /* ignore */ }
-    } else {
-      // Имена уже есть в кеше — рендерим мгновенно, освежаем в фоне
-      refreshOwnerNamesInBackground(supabase, otherOwners);
-      // Плюс добираем недостающие синхронно
-      if (missingIds.length > 0) {
-        try {
-          const fetched = await fetchOwnerNames(supabase, missingIds);
-          Object.assign(ownerNames, fetched);
-          const trimmed = {};
-          otherOwners.forEach(id => { if (ownerNames[id]) trimmed[id] = ownerNames[id]; });
-          writeNamesCache(trimmed);
-        } catch { /* ignore */ }
-      }
-    }
-  }
-  // ==========================================
+  // === Имена владельцев (друзей) — из общего кеша ===
+  const ownerNames = otherOwners.length > 0
+    ? await resolveOwnerNames(supabase, otherOwners)
+    : {};
+  // ================================================
 
   let targetOwnerId = getActiveViewOwnerId();
   if (!targetOwnerId || (targetOwnerId !== myId && !ownerIds.has(targetOwnerId))) {
