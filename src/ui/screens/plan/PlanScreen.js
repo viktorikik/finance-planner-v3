@@ -1,9 +1,9 @@
 /* ==========================================================================
    Экран «План».
    - Карточки целей по умолчанию СВЁРНУТЫ.
-   - Добавлен свайп влево для удаления цели.
-   - Убран визуальный шум (эмодзи).
-   - НОВОЕ: Блок "История доходов" для удаления любых записей.
+   - Свайп влево для удаления цели.
+   - Блок «История доходов».
+   - NEW v4.4.1: приветствие с именем и мотивирующей фразой.
    ========================================================================== */
 import { getAllFromStore } from '../../../infrastructure/database/transaction.js';
 import { executeCommand } from '../../../application/commands/executeCommand.js';
@@ -22,7 +22,7 @@ let isAmountHidden = typeof localStorage !== 'undefined' ? localStorage.getItem(
 let openSettingsGoalId = null;
 let openTransferGoalId = null;
 let isPoolTransferOpen = false;
-let isIncomesListOpen = false; // Раскрыт ли список доходов
+let isIncomesListOpen = false;
 const forecastCache = new Map();
 
 const SVG_EYE_OPEN = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
@@ -34,13 +34,13 @@ const ICON_TRASH = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" 
 function buildSchedule(balance, futureOps, annualRate) {
   let currentBalance = balance;
   const monthlyRate = annualRate ? (Math.pow(1 + annualRate / 100, 1/12) - 1) : 0;
-  
+
   return futureOps.map(op => {
     const contribution = op.plannedAmountMinor;
     currentBalance += contribution;
     const interest = Math.round(currentBalance * monthlyRate);
     currentBalance += interest;
-    
+
     return {
       id: op.id,
       month: op.plannedMonth,
@@ -51,10 +51,23 @@ function buildSchedule(balance, futureOps, annualRate) {
   });
 }
 
+/* Безопасное экранирование для вставки в HTML (защита от «<», «&» и т.п.) */
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
 export async function renderPlanScreen(container, db) {
   const supabase = getSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   const myId = user?.id;
+
+  // === Параллельно запускаем запрос display_name из profiles ===
+  const profilePromise = user
+    ? supabase.from('profiles').select('display_name').eq('id', user.id).maybeSingle()
+    : Promise.resolve({ data: null, error: null });
+  // =============================================================
 
   const tx = db.transaction(['goals', 'moneyEntries', 'plannedOperations', 'actualIncomes', 'settings', 'categories'], 'readonly');
   const allGoalsRaw = await getAllFromStore('goals', tx);
@@ -62,7 +75,7 @@ export async function renderPlanScreen(container, db) {
   const allPlannedOpsRaw = await getAllFromStore('plannedOperations', tx);
   const actualIncomesRaw = await getAllFromStore('actualIncomes', tx);
   const allCategoriesRaw = await getAllFromStore('categories', tx);
-  
+
   const settingsTx = db.transaction(['settings'], 'readonly');
   const generalInflationSetting = await new Promise((resolve) => {
     const req = settingsTx.objectStore('settings').get('generalInflationRate');
@@ -90,19 +103,70 @@ export async function renderPlanScreen(container, db) {
   const achievedGoals = goals.filter(g => g.status === 'achieved');
   const totalAccumulated = calculateTotalAccumulated(moneyEntries);
   const poolBalance = calculatePoolBalance(moneyEntries);
-  
+
   const now = new Date();
   const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const currentDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  
+
+  // === Разрешаем display_name ===
+  let displayName = null;
+  try { displayName = localStorage.getItem('cached_display_name') || null; } catch {}
+  if (user) {
+    const metaName = user?.user_metadata?.display_name || user?.user_metadata?.name;
+    if (metaName) displayName = metaName;
+    try {
+      const profileResult = await profilePromise;
+      if (profileResult?.data?.display_name) {
+        displayName = profileResult.data.display_name;
+        try { localStorage.setItem('cached_display_name', displayName); } catch {}
+      }
+    } catch (err) {
+      console.warn('[PlanScreen] profile fetch failed, using fallback:', err?.message);
+    }
+  }
+  const myName = String(displayName || user?.email?.split('@')[0] || 'друг').trim();
+  const showGreeting = !isReadOnly;
+
+  let greetingHtml = '';
+  if (showGreeting) {
+    const nowHour = now.getHours();
+    let timeWord = 'Привет';
+    if (nowHour >= 5 && nowHour < 12) timeWord = 'Доброе утро';
+    else if (nowHour >= 12 && nowHour < 18) timeWord = 'Добрый день';
+    else if (nowHour >= 18 && nowHour < 23) timeWord = 'Добрый вечер';
+    else timeWord = 'Доброй ночи';
+
+    const motivations = [
+      'Маленькие шаги каждый день — большие перемены через год.',
+      'Каждый отложенный рубль — это шаг к мечте.',
+      'Финансовая свобода начинается с первого взноса.',
+      'Дисциплина важнее суммы. Главное — начать.',
+      'Ты уже на верном пути. Продолжай в том же духе!',
+      'Цели становятся реальностью, когда ты действуешь.',
+      'Будущее создаётся из ежедневных решений.',
+      'Спокойные накопления побеждают импульсивные траты.',
+    ];
+    const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+    const motivation = motivations[dayOfYear % motivations.length];
+
+    greetingHtml = `
+      <section class="greeting-card">
+        <div class="greeting-title">${timeWord}, ${escapeHtml(myName)}! 👋</div>
+        <p class="greeting-text">
+          Здесь собрана вся информация о твоих финансовых планах.
+          <span class="greeting-motivation">${motivation}</span>
+        </p>
+      </section>
+    `;
+  }
+  // =============================
+
   const formatRub = (kopeks) => (kopeks / 100).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
-  
-  // Сумма доходов ТЕКУЩЕГО месяца
+
   const currentMonthIncomes = actualIncomes
     .filter(inc => inc.actualDate.startsWith(currentMonth))
     .reduce((sum, inc) => sum + inc.amountMinor, 0);
 
-  // ИСТОРИЯ ВСЕХ ДОХОДОВ (сортируем по дате: новые сверху, берем последние 20)
   const allIncomesSorted = [...actualIncomes]
     .sort((a, b) => new Date(b.actualDate) - new Date(a.actualDate))
     .slice(0, 20);
@@ -110,7 +174,7 @@ export async function renderPlanScreen(container, db) {
   let filteredGoals = activeGoals;
   if (currentFilter === 'short') filteredGoals = activeGoals.filter(g => g.category === 'short');
   if (currentFilter === 'long') filteredGoals = activeGoals.filter(g => g.category === 'long');
-  
+
   filteredGoals.sort((a, b) => {
     if (a.category === 'short' && b.category === 'long') return -1;
     if (a.category === 'long' && b.category === 'short') return 1;
@@ -140,7 +204,6 @@ export async function renderPlanScreen(container, db) {
     `;
   }
 
-  // БЛОК ИСТОРИИ ДОХОДОВ
   let incomesListHtml = '';
   if (allIncomesSorted.length > 0) {
     incomesListHtml = `
@@ -177,6 +240,8 @@ export async function renderPlanScreen(container, db) {
   let html = `
     ${switcherHtml}
 
+    ${greetingHtml}
+
     <div style="text-align: center; margin-bottom: 20px; position: relative;">
       <div style="font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px;">Всего накоплено</div>
       <div style="font-size: 32px; font-weight: 800; color: var(--green);" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(totalAccumulated)} ₽</div>
@@ -209,7 +274,7 @@ export async function renderPlanScreen(container, db) {
         <h2 style="color: var(--green); margin-bottom: 8px;">Свободные деньги</h2>
         <div style="font-size: 24px; font-weight: bold; margin-bottom: 4px;" class="${isAmountHidden ? 'blurred' : ''}">${formatRub(poolBalance)} ₽</div>
         <div style="font-size: 12px; color: var(--muted); margin-bottom: 12px;">Деньги, не привязанные к конкретной цели.</div>
-        
+
         ${!isReadOnly ? (!isPoolTransferOpen ? `
           <button class="btn btn-small btn-outline" id="btn-open-pool-transfer" style="border-color: var(--green); color: var(--green);">Перевести в цель</button>
         ` : `
@@ -241,9 +306,9 @@ export async function renderPlanScreen(container, db) {
           </select>
           <input type="month" id="goal-deadline" required value="${now.getFullYear() + 1}-12">
         </div>
-        
+
         <button type="button" class="btn-text" id="toggle-advanced-create" style="text-align: left; padding: 8px 0; color: var(--accent);">Дополнительные настройки</button>
-        
+
         <div id="advanced-create-fields" style="display: none; flex-direction: column; gap: 8px; background: var(--card-2); padding: 12px; border-radius: 8px; margin-bottom: 8px; border: 1px solid var(--border);">
           <div class="form-group">
             <label>Начать копить с:</label>
@@ -289,7 +354,7 @@ export async function renderPlanScreen(container, db) {
       const balance = calculateGoalBalance(goal.id, moneyEntries);
       const target = goal.targetAmountMinor;
       const percent = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
-      
+
       const goalPlans = allPlannedOps
         .filter(op => op.goalId === goal.id && op.state === 'scheduled' && op.plannedMonth)
         .sort((a, b) => (a.plannedMonth || '').localeCompare(b.plannedMonth || ''));
@@ -304,7 +369,7 @@ export async function renderPlanScreen(container, db) {
       let forecastHtml = '';
       let schedule = [];
       const cacheKey = `${goal.id}_${balance}_${goal.targetAmountMinor}_${goal.annualRate}_${goal.individualInflationRate}_${goal.indexationEnabled}_${goal.indexationRate}_${goal.planMode}_${goal.manualMonthlyAmountMinor}_${goal.deadlineMonth}_${calcStartMonth}`;
-      
+
       if (!forecastCache.has(cacheKey)) {
         let reqContrib = null;
         let futureOps = [];
@@ -337,7 +402,7 @@ export async function renderPlanScreen(container, db) {
 
         const fc = forecastGoal(goal, balance, futureOps, generalInflationSetting, calcStartMonth, 600);
         schedule = buildSchedule(balance, futureOps, goal.annualRate);
-        
+
         forecastCache.set(cacheKey, { reqContrib, fc, schedule });
       }
 
@@ -471,7 +536,7 @@ export async function renderPlanScreen(container, db) {
               const [y, m] = row.month.split('-');
               const monthName = new Date(y, m - 1, 1).toLocaleDateString('ru-RU', { month: 'short' });
               const yearShort = y.slice(2);
-              
+
               return `
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed var(--border);">
                   <div style="flex: 0 0 45px;">
@@ -521,7 +586,7 @@ export async function renderPlanScreen(container, db) {
       html += `
         <div class="swipe-wrapper" style="margin-bottom: 12px; position: relative; overflow: hidden; border-radius: 12px;">
           ${!isReadOnly ? `<div class="swipe-action" data-goal-id="${goal.id}" style="position: absolute; right: 0; top: 0; bottom: 0; width: 80px; background: var(--red); color: white; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: bold; cursor: pointer;">Удалить</div>` : ''}
-          
+
           <div class="goal-item swipe-item" style="position: relative; background: var(--card); transition: transform 0.3s ease; padding: 16px; border: 1px solid var(--border);">
             <div class="goal-header" style="cursor: pointer;" data-action="toggle-collapse" data-goal-id="${goal.id}">
               <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
@@ -550,13 +615,13 @@ export async function renderPlanScreen(container, db) {
                 <button type="button" class="btn btn-small btn-outline" data-action="open-settings" data-goal-id="${goal.id}" style="flex: 1 1 30%; display: flex; align-items: center; justify-content: center;">
                   ${ICON_SETTINGS}
                 </button>
-                
+
                 ${goal.deadlineMonth && balance < target ? `
                   <button type="button" class="btn btn-small auto-plan-btn" data-goal-id="${goal.id}" style="flex: 1 1 40%;">
                     Автоплан
                   </button>
                 ` : ''}
-                
+
                 <button type="button" class="btn btn-small btn-outline toggle-manual-btn" data-goal-id="${goal.id}" style="flex: 1 1 20%;">+ План</button>
               </div>
 
@@ -594,7 +659,7 @@ export async function renderPlanScreen(container, db) {
   html += `
     <section class="card" style="opacity: 0.8;">
       <h2>Архив достижений</h2>
-      ${achievedGoals.length > 0 
+      ${achievedGoals.length > 0
         ? `<p class="muted" style="text-align: left; padding: 0; margin-bottom: 12px; color: var(--green); font-weight: 600;">Вы молодец! Уже достигнуто ${achievedGoals.length} ${achievedGoals.length === 1 ? 'цель' : (achievedGoals.length < 5 ? 'цели' : 'целей')}! Продолжайте в том же духе.</p>
            <div style="display: flex; flex-direction: column; gap: 8px;">
             ${achievedGoals.map(g => `
@@ -855,7 +920,7 @@ export async function renderPlanScreen(container, db) {
     const targetRub = parseFloat(document.getElementById('goal-target').value);
     const category = document.getElementById('goal-category').value;
     const deadlineMonth = document.getElementById('goal-deadline').value || null;
-    
+
     const startMonth = document.getElementById('goal-startMonth').value || currentMonth;
     const annualRateVal = document.getElementById('goal-annualRate').value;
     const inflationVal = document.getElementById('goal-inflation').value;
@@ -866,10 +931,10 @@ export async function renderPlanScreen(container, db) {
 
     const cmd = {
       commandId: generateId(), commandType: 'goal.create',
-      payload: { 
-        name, 
-        category, 
-        targetAmountMinor: Math.round(targetRub * 100), 
+      payload: {
+        name,
+        category,
+        targetAmountMinor: Math.round(targetRub * 100),
         deadlineMonth,
         startMonth,
         annualRate: annualRateVal === '' ? null : Number(annualRateVal),
@@ -909,7 +974,7 @@ export async function renderPlanScreen(container, db) {
       const goalId = btn.dataset.goalId;
       const goal = activeGoals.find(g => g.id === goalId);
       const goalPlans = allPlannedOps.filter(op => op.goalId === goalId);
-      
+
       if (goalPlans.length > 0) {
         if (!confirm('У вас уже есть план. Заменить его новым автоматическим расчетом?')) return;
         const clearCmd = { commandId: generateId(), commandType: 'plannedOperation.clearForGoal', payload: { goalId }, registeredAt: new Date().toISOString() };
@@ -929,10 +994,10 @@ export async function renderPlanScreen(container, db) {
       e.stopPropagation();
       const opId = btn.dataset.opId;
       const currentAmount = parseInt(btn.dataset.currentAmount, 10) / 100;
-      
+
       const modal = document.getElementById('edit-op-modal');
       const content = document.getElementById('edit-op-content');
-      
+
       content.innerHTML = `
         <h3>Изменить взнос</h3>
         <p style="margin-bottom: 16px;">Введите новую сумму для этого месяца (в рублях).</p>
@@ -950,20 +1015,20 @@ export async function renderPlanScreen(container, db) {
           <button class="btn" id="btn-edit-save">Сохранить</button>
         </div>
       `;
-      
+
       modal.classList.add('active');
-      
+
       document.getElementById('btn-edit-cancel').addEventListener('click', () => modal.classList.remove('active'));
-      
+
       document.getElementById('btn-edit-save').addEventListener('click', async () => {
         const newAmountRub = parseFloat(document.getElementById('edit-op-amount').value);
         const recalculateRest = document.getElementById('edit-op-recalc').checked;
-        
+
         if (isNaN(newAmountRub) || newAmountRub <= 0) {
           alert('Введите корректную сумму больше нуля.');
           return;
         }
-        
+
         try {
           const cmd = {
             commandId: generateId(),
@@ -1038,18 +1103,18 @@ export async function renderPlanScreen(container, db) {
     const goal = activeGoals.find(g => g.id === goalId);
     const balance = calculateGoalBalance(goalId, moneyEntries);
     let moveToPool = false;
-    if (balance > 0) { 
-      moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Свободные деньги.\nОтмена — сжечь (удалить).`); 
-    } else { 
-      if (!confirm('Удалить цель?')) return; 
+    if (balance > 0) {
+      moveToPool = confirm(`На цели "${goal.name}" есть ${formatRub(balance)} ₽.\n\nОК — перевести в Свободные деньги.\nОтмена — сжечь (удалить).`);
+    } else {
+      if (!confirm('Удалить цель?')) return;
     }
     const cmd = { commandId: generateId(), commandType: 'goal.delete', payload: { goalId, moveToPool }, registeredAt: new Date().toISOString() };
-    try { 
-      await executeCommand(db, cmd); 
-      forecastCache.clear(); 
-      await renderPlanScreen(container, db); 
-    } catch (err) { 
-      alert(err.message); 
+    try {
+      await executeCommand(db, cmd);
+      forecastCache.clear();
+      await renderPlanScreen(container, db);
+    } catch (err) {
+      alert(err.message);
     }
   }
 
@@ -1104,7 +1169,7 @@ export async function renderPlanScreen(container, db) {
       item.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
         const deltaX = e.touches[0].clientX - startX;
-        
+
         if (deltaX > 0 && !isOpen) {
           currentX = 0;
         } else if (deltaX < 0 && isOpen) {
@@ -1119,7 +1184,7 @@ export async function renderPlanScreen(container, db) {
         if (!isDragging) return;
         isDragging = false;
         item.style.transition = 'transform 0.3s ease';
-        
+
         if (currentX < -threshold) {
           item.style.transform = `translateX(${openDistance}px)`;
           isOpen = true;
@@ -1170,7 +1235,7 @@ export async function renderPlanScreen(container, db) {
       item.addEventListener('touchmove', (e) => {
         if (!isDragging) return;
         const deltaX = e.touches[0].clientX - startX;
-        
+
         if (deltaX > 0 && !isOpen) {
           currentX = 0;
         } else if (deltaX < 0 && isOpen) {
@@ -1185,7 +1250,7 @@ export async function renderPlanScreen(container, db) {
         if (!isDragging) return;
         isDragging = false;
         item.style.transition = 'transform 0.3s ease';
-        
+
         if (currentX < -threshold) {
           item.style.transform = `translateX(${openDistance}px)`;
           isOpen = true;
